@@ -37,13 +37,13 @@ def parse_args():
     train_settings = parser.add_argument_group('train settings')
     # 5849=[4800, 40, 160, 40, 32] 25000=[4950, 33, 165, 38, 25] 4019=[11700, 130, 390, 98, 64]
     # 41401 = [7800, 52, 260, 40, 32] 208=[
-    train_settings.add_argument('--num_steps', type=int, default=4800,
+    train_settings.add_argument('--num_steps', type=int, default=11700,
                                 help='num of step')
-    train_settings.add_argument('--period', type=int, default=40,
+    train_settings.add_argument('--period', type=int, default=130,
                                 help='period to save batch loss')
-    train_settings.add_argument('--checkpoint', type=int, default=160,
+    train_settings.add_argument('--checkpoint', type=int, default=390,
                                 help='checkpoint for evaluation')
-    train_settings.add_argument('--eval_num_batches', type=int, default=40,
+    train_settings.add_argument('--eval_num_batches', type=int, default=98,
                                 help='num of batches for evaluation')
 
     train_settings.add_argument('--optim', default='adam',
@@ -100,7 +100,7 @@ def parse_args():
                                 help='num of input attention head')
     model_settings.add_argument('--step_att', type=bool, default=True,
                                 help='whether to use input step attention')
-    model_settings.add_argument('--block_stp', type=int, default=4,
+    model_settings.add_argument('--block_stp', type=int, default=2,
                                 help='num of block for step attention')
     model_settings.add_argument('--head_stp', type=int, default=4,
                                 help='num of step attention head')
@@ -112,7 +112,7 @@ def parse_args():
                                 help='whether to use gated conv')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--task', default='5849',
+    path_settings.add_argument('--task', default='41401',
                                help='the task name')
     path_settings.add_argument('--model', default='DIMM',
                                help='the model name')
@@ -234,11 +234,12 @@ def train(args, file_paths, dim):
                     patience += 1
                 if patience >= args.patience:
                     lr /= 2.0
+                    logger.info('LR reduced to {}'.format(lr))
                     roc_save = roc
                     patience = 0
                 sess.run(tf.assign(model.lr, tf.constant(lr, dtype=tf.float32)))
 
-                max_acc = max((dev_metrics['acc'], max_acc))
+                max_acc = max(dev_metrics['acc'], max_acc)
                 max_roc = max(dev_metrics['roc'], max_roc)
                 max_prc = max(dev_metrics['prc'], max_prc)
                 max_pse = max(dev_metrics['pse'], max_pse)
