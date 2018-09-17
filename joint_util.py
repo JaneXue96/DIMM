@@ -43,39 +43,41 @@ def get_dataset(record_file, parser, config):
 
 def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_handle, logger):
     losses = []
-    pre_mors, ref_mors = [], []
-    pre_diss, ref_diss = [], []
+    mor_ref_labels, mor_pre_labels, mor_pre_scores = [], [], []
+    dis_ref_labels, dis_pre_labels, dis_pre_scores = [], [], []
     metrics_mor, metrics_dis = {}, {}
     # pre_points = {3: [], 18: [], 36: [], 72: [], 144: [], 216: []}
     # ref_points = {3: [], 18: [], 36: [], 72: [], 144: [], 216: []}
     for _ in range(num_batches):
-        patient_ids, loss, mor_preds, dis_preds, seq_lens = sess.run(
-            [model.id, model.loss, model.mor_preds, model.dis_preds, model.seq_len],
+        patient_ids, loss, outputs_mor, outputs_dis, seq_lens = sess.run(
+            [model.id, model.loss, model.outputs_mor, model.outputs_dis, model.seq_len],
             feed_dict={handle: str_handle} if handle is not None else None)
         losses.append(loss)
-        for pid, mor_pred, dis_pred, seq_len in zip(patient_ids, mor_preds, dis_preds, seq_lens):
+        for pid, output_mor, output_dis, seq_len in zip(patient_ids, outputs_mor, outputs_dis, seq_lens):
             sample = eval_file[str(pid)]
+            mor_ref_labels += [sample['label_mor']] * seq_len
+            mor_pre_labels += np.argmax(output_mor, axis=-1)[:seq_len].tolist()
+            mor_pre_scores += output_mor[:, 1][:seq_len].tolist()
 
-            ref_mors += [sample['label_mor']] * seq_len
-            pre_mors += mor_pred[:seq_len].tolist()
-            pre_diss.append(dis_pred)
-            ref_diss.append(sample['label_dis'])
+            dis_pre_labels.append(np.argmax(output_dis, axis=-1))
+            dis_pre_scores.append(output_dis[1])
+            dis_ref_labels.append(sample['label_dis'])
             # for k, v in pre_points.items():
             #     if seq_len >= k:
             #         v.append(mor_pred[k - 1])
             #         ref_points[k].append(sample['label_mor'])
 
     batch_loss = np.mean(losses)
-    metrics_mor['acc'] = accuracy_score(ref_mors, pre_mors)
-    metrics_mor['roc'] = roc_auc_score(ref_mors, pre_mors)
-    (precisions, recalls, thresholds) = precision_recall_curve(ref_mors, pre_mors)
+    metrics_mor['acc'] = accuracy_score(mor_ref_labels, mor_pre_labels)
+    metrics_mor['roc'] = roc_auc_score(mor_ref_labels, mor_pre_scores)
+    (precisions, recalls, thresholds) = precision_recall_curve(mor_ref_labels, mor_pre_scores)
     metrics_mor['prc'] = auc(recalls, precisions)
     metrics_mor['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
     # for k, v in pre_points.items():
     #     logger.info('{} hour confusion matrix. AUCROC : {}'.format(int(k / 3), roc_auc_score(ref_points[k], v)))
     #     logger.info(confusion_matrix(ref_points[k], v))
     logger.info('Mortality confusion matrix')
-    logger.info(confusion_matrix(ref_mors, pre_mors))
+    logger.info(confusion_matrix(mor_ref_labels, mor_pre_labels))
     loss_sum = tf.Summary(value=[tf.Summary.Value(tag='{}/loss'.format(data_type), simple_value=batch_loss), ])
     mor_acc = tf.Summary(
         value=[tf.Summary.Value(tag='{}/mor/acc'.format(data_type), simple_value=metrics_mor['acc']), ])
@@ -84,14 +86,13 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
     mor_prc = tf.Summary(
         value=[tf.Summary.Value(tag='{}/mor/prc'.format(data_type), simple_value=metrics_mor['prc']), ])
 
-    metrics_dis['acc'] = accuracy_score(ref_diss, pre_diss)
-
-    metrics_dis['roc'] = roc_auc_score(ref_diss, pre_diss)
-    (precisions, recalls, thresholds) = precision_recall_curve(ref_diss, pre_diss)
+    metrics_dis['acc'] = accuracy_score(dis_ref_labels, dis_pre_labels)
+    metrics_dis['roc'] = roc_auc_score(dis_pre_labels, dis_pre_scores)
+    (precisions, recalls, thresholds) = precision_recall_curve(dis_pre_labels, dis_pre_scores)
     metrics_dis['prc'] = auc(recalls, precisions)
     metrics_dis['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
     logger.info('Disease confusion matrix')
-    logger.info(confusion_matrix(ref_diss, pre_diss))
+    logger.info(confusion_matrix(dis_ref_labels, dis_pre_labels))
     dis_acc = tf.Summary(
         value=[tf.Summary.Value(tag='{}/dis/acc'.format(data_type), simple_value=metrics_dis['acc']), ])
     dis_auc = tf.Summary(

@@ -161,10 +161,10 @@ class Joint_DIMM_Model(object):
 
     def _compute_loss(self):
         self.all_params = tf.trainable_variables()
-        self.mor_preds = tf.argmax(self.outputs_mor, axis=1 if self.is_point else 2)
-        self.mor_scores = self.outputs_mor[:, :, 1]
-        self.dis_preds = tf.argmax(self.outputs_dis, axis=1)
-        self.dis_scores = self.outputs_dis[:, 1]
+        # self.mor_pred_labels = tf.argmax(self.outputs_mor, axis=1 if self.is_point else 2)
+        # self.mor_pred_scores = self.outputs_mor[:, :, 1]
+        # self.dis_pred_labels = tf.argmax(self.outputs_dis, axis=1)
+        # self.dis_pred_scores = self.outputs_dis[:, 1]
         self.loss = self.mor_loss + self.dis_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):

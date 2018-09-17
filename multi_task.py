@@ -238,9 +238,9 @@ def train(args, file_paths, dim):
                     patience += 1
                 if patience >= args.patience:
                     lr /= 2.0
-                    logger.info('LR reduced to {}'.format(lr))
                     roc_save = roc
                     patience = 0
+                    logger.info('Learning rate reduced to {}'.format(lr))
                 sess.run(tf.assign(model.lr, tf.constant(lr, dtype=tf.float32)))
 
                 # max_acc = max((dev_metrics['acc'], max_acc))

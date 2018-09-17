@@ -35,15 +35,15 @@ def parse_args():
                         help='specify gpu device')
 
     train_settings = parser.add_argument_group('train settings')
-    # 5849=[4800, 40, 160, 40, 32] 25000=[4950, 33, 165, 38, 25] 4019=[11700, 130, 390, 98, 64]
-    # 41401 = [7800, 52, 260, 40, 32] 208=[
-    train_settings.add_argument('--num_steps', type=int, default=11700,
+    # 5849=[4800, 40, 160, 40, 64] 25000=[4950, 33, 165, 38, 25] 4019=[11700, 130, 390, 98, 64]
+    # 41401 = [7800, 52, 260, 40, 64] 208=[
+    train_settings.add_argument('--num_steps', type=int, default=4800,
                                 help='num of step')
-    train_settings.add_argument('--period', type=int, default=130,
+    train_settings.add_argument('--period', type=int, default=40,
                                 help='period to save batch loss')
-    train_settings.add_argument('--checkpoint', type=int, default=390,
+    train_settings.add_argument('--checkpoint', type=int, default=160,
                                 help='checkpoint for evaluation')
-    train_settings.add_argument('--eval_num_batches', type=int, default=98,
+    train_settings.add_argument('--eval_num_batches', type=int, default=40,
                                 help='num of batches for evaluation')
 
     train_settings.add_argument('--optim', default='adam',
@@ -112,9 +112,9 @@ def parse_args():
                                 help='whether to use gated conv')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--task', default='41401',
+    path_settings.add_argument('--task', default='4019',
                                help='the task name')
-    path_settings.add_argument('--model', default='DIMM',
+    path_settings.add_argument('--model', default='LSTM',
                                help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
@@ -159,8 +159,8 @@ def train(args, file_paths, dim):
     train_iterator = train_dataset.make_one_shot_iterator()
     dev_iterator = dev_dataset.make_one_shot_iterator()
     logger.info('Initialize the model...')
-    # model = bi_RNN_Model(args, iterator, dim, logger)
-    model = DIMM_Model(args, iterator, dim, logger)
+    model = bi_RNN_Model(args, iterator, dim, logger)
+    # model = DIMM_Model(args, iterator, dim, logger)
     # model = sep_RNN_Model(args, iterator, dim, logger)
     # model = TCN(args, iterator, dim, logger)
     # model = SAND(args, iterator, dim, logger)
@@ -234,7 +234,7 @@ def train(args, file_paths, dim):
                     patience += 1
                 if patience >= args.patience:
                     lr /= 2.0
-                    logger.info('LR reduced to {}'.format(lr))
+                    logger.info('Learning rate reduced to {}'.format(lr))
                     roc_save = roc
                     patience = 0
                 sess.run(tf.assign(model.lr, tf.constant(lr, dtype=tf.float32)))

@@ -233,6 +233,7 @@ def train(args, file_paths, dim):
                     lr /= 2.0
                     roc_save = roc
                     patience = 0
+                    logger.info('Learning rate reduced to {}'.format(lr))
                 sess.run(tf.assign(model.lr, tf.constant(lr, dtype=tf.float32)))
 
                 if task_sum > max_sum:

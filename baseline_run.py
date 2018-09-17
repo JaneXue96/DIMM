@@ -190,6 +190,7 @@ def compute_label(X_train, X_test, Y_train, Y_test, logger, path, task):
     lr = LogisticRegression()
     lr.fit(X_train, Y_train)
     Y_pred = lr.predict(X_test)
+    Y_score = lr.predict_proba(X_test)
     lr_me = cal_metrics(Y_test, Y_pred)
     metrics.append(lr_me)
     logger.info('LR - {}'.format(lr_me))

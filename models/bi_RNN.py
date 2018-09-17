@@ -26,7 +26,7 @@ class bi_RNN_Model(object):
         self.dropout_keep_prob = args.dropout_keep_prob
         self.weight_decay = args.weight_decay
 
-        self.id, self.index, self.medicine, self.seq_len, self.org_len, self.labels = batch.get_next()
+        self.id, self.index, self.medicine, self.seq_len, self.labels = batch.get_next()
         self.N = tf.shape(self.id)[0]
         self.max_len = tf.reduce_max(self.seq_len)
         self.mask = tf.sequence_mask(self.seq_len, self.max_len, dtype=tf.float32, name='masks')
@@ -79,7 +79,7 @@ class bi_RNN_Model(object):
     def _rnn(self):
         with tf.variable_scope('rnn', reuse=tf.AUTO_REUSE):
             if self.use_cudnn:
-                self.seq_encodes, _ = cu_rnn('bi-gru', self.input_encodes, self.n_hidden, self.n_batch,
+                self.seq_encodes, _ = cu_rnn('bi-lstm', self.input_encodes, self.n_hidden, self.n_batch,
                                              self.is_train, self.n_layer)
             else:
                 self.seq_encodes = nor_rnn('bi-sru', self.input_encodes, self.seq_len, self.n_hidden,
@@ -119,6 +119,7 @@ class bi_RNN_Model(object):
     def _compute_loss(self):
         self.all_params = tf.trainable_variables()
         self.pre_labels = tf.argmax(self.outputs, axis=1 if self.is_point else 2)
+        self.pre_scores = self.outputs[:, :, 1]
         self.loss = self.label_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
