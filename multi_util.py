@@ -40,24 +40,24 @@ def get_dataset(record_file, parser, config):
 
 def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_handle, is_point, logger):
     losses = []
-    pre_labels, ref_labels = [], []
+    pre_scores, pre_labels, ref_labels = [], [], []
     metrics = {}
     pre_points = {3: [], 18: [], 36: [], 72: [], 144: [], 216: []}
     ref_points = {3: [], 18: [], 36: [], 72: [], 144: [], 216: []}
     for _ in range(num_batches):
-        patient_ids, loss, labels, seq_lens = sess.run([model.id, model.loss, model.pre_labels, model.seq_len],
-                                                       feed_dict={handle: str_handle} if handle is not None else None)
+        patient_ids, loss, labels, scores, seq_lens = sess.run([model.id, model.loss, model.pre_labels,
+                                                                model.pre_scores, model.seq_len],
+                                                               feed_dict={handle: str_handle} if handle is not None else None)
         losses.append(loss)
-        for pid, pre_label, seq_len in zip(patient_ids, labels, seq_lens):
+        for pid, pre_label, pre_score, seq_len in zip(patient_ids, labels, scores, seq_lens):
             sample = eval_file[str(pid)]
             if is_point:
                 pre_labels.append(pre_label)
                 ref_labels.append(sample['label'])
             else:
-                ref_label = np.zeros([seq_len], dtype=np.int32)
-                ref_label[:] = sample['label']
                 ref_labels += [sample['label']] * seq_len
                 pre_labels += pre_label[:seq_len].tolist()
+                pre_scores += pre_score[:seq_len].tolist()
 
             for k, v in pre_points.items():
                 if seq_len >= k:
@@ -66,8 +66,8 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
 
     metrics['loss'] = np.mean(losses)
     metrics['acc'] = accuracy_score(ref_labels, pre_labels)
-    metrics['roc'] = roc_auc_score(ref_labels, pre_labels)
-    (precisions, recalls, thresholds) = precision_recall_curve(ref_labels, pre_labels)
+    metrics['roc'] = roc_auc_score(ref_labels, pre_scores)
+    (precisions, recalls, thresholds) = precision_recall_curve(ref_labels, pre_scores)
     metrics['prc'] = auc(recalls, precisions)
     metrics['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
     for k, v in pre_points.items():
@@ -82,15 +82,18 @@ def multi_evaluate(model, num_batches, eval_file, sess, handle, str_handle, is_p
     losses = []
     task_metrics = {}
     task_labels = {}
-    tasks = ['5849', '25000']
+    task_scores = {}
+    tasks = ['5849', '25000', '41401', '4019']
     for t in tasks:
         task_metrics[t] = {'loss': 0, 'acc': 0.0, 'roc': 0.0, 'prc': 0.0, 'pse': 0.0}
         task_labels[t] = {'true': [], 'pred': []}
+        task_scores[t] = []
     for _ in range(num_batches):
-        patient_ids, loss, labels, seq_lens = sess.run([model.id, model.loss, model.pre_labels, model.seq_len],
-                                                       feed_dict={handle: str_handle} if handle is not None else None)
+        patient_ids, loss, labels, scores, seq_lens = sess.run([model.id, model.loss, model.pre_labels, model.pre_scores,
+                                                                model.seq_len],
+                                                               feed_dict={handle: str_handle} if handle is not None else None)
         losses.append(loss)
-        for pid, pre_label, seq_len in zip(patient_ids, labels, seq_lens):
+        for pid, pre_label, pre_score, seq_len in zip(patient_ids, labels, scores, seq_lens):
             sample = eval_file[str(pid)]
             task = sample['task']
             if is_point:
@@ -99,6 +102,7 @@ def multi_evaluate(model, num_batches, eval_file, sess, handle, str_handle, is_p
             else:
                 task_labels[task]['true'] += [sample['label']] * seq_len
                 task_labels[task]['pred'] += pre_label[:seq_len].tolist()
+                task_scores[task] += pre_score[:seq_len].tolist()
             # for k, v in pre_points.items():
             #     if seq_len >= k:
             #         v.append(pre_label[k - 1])
@@ -108,8 +112,8 @@ def multi_evaluate(model, num_batches, eval_file, sess, handle, str_handle, is_p
     for t in tasks:
         # task_metrics[t]['loss'] = np.mean(losses)
         task_metrics[t]['acc'] = accuracy_score(task_labels[t]['true'], task_labels[t]['pred'])
-        task_metrics[t]['roc'] = roc_auc_score(task_labels[t]['true'], task_labels[t]['pred'])
-        (precisions, recalls, thresholds) = precision_recall_curve(task_labels[t]['true'], task_labels[t]['pred'])
+        task_metrics[t]['roc'] = roc_auc_score(task_labels[t]['true'], task_scores[t])
+        (precisions, recalls, thresholds) = precision_recall_curve(task_labels[t]['true'], task_scores[t])
         task_metrics[t]['prc'] = auc(recalls, precisions)
         task_metrics[t]['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
     return task_metrics

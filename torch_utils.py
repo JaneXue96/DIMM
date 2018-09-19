@@ -5,7 +5,7 @@ from torch.autograd import Variable
 from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, precision_recall_curve, auc
 
 
-def get_batch(samples, dim):
+def get_batch(samples, dim, device):
     seq_lens = [sample['length'] for sample in samples]
     max_len = max(seq_lens)
     indexes, medicines, labels = [], [], []
@@ -19,14 +19,12 @@ def get_batch(samples, dim):
         indexes.append(index)
         medicines.append(medicine)
         labels.append([sample['label']] * max_len)
-
     indexes = np.asarray(indexes, dtype=np.float32)
     medicines = np.asarray(medicines, dtype=np.float32)
     labels = np.asarray(labels, dtype=np.int64)
     seq_lens = np.asarray(seq_lens, dtype=np.int64)
-
-    return Variable(torch.from_numpy(indexes)), Variable(torch.from_numpy(medicines)), \
-           Variable(torch.from_numpy(labels)), Variable(torch.from_numpy(seq_lens))
+    return torch.from_numpy(indexes).to(device), torch.from_numpy(medicines).to(device), \
+           torch.from_numpy(labels).to(device), torch.from_numpy(seq_lens).to(device)
 
 
 def _sequence_mask(sequence_length, max_len=None):
@@ -76,9 +74,9 @@ def compute_loss(logits, target, length):
     return loss
 
 
-def evaluate_batch(model, data_num, batch_size, eval_file, dim, use_cuda, data_type, is_point, logger):
+def evaluate_batch(model, data_num, batch_size, eval_file, dim, device, data_type, is_point, logger):
     losses = []
-    pre, ref = [], []
+    pre_labels, pre_scores, ref = [], [], []
     fp = []
     fn = []
     metrics = {}
@@ -88,27 +86,25 @@ def evaluate_batch(model, data_num, batch_size, eval_file, dim, use_cuda, data_t
     for batch_idx, batch in enumerate(range(0, data_num, batch_size)):
         start_idx = batch
         end_idx = start_idx + batch_size
-        indexes, medicines, labels, seq_lens = get_batch(eval_file[start_idx:end_idx], dim)
-        if use_cuda:
-            indexes = indexes.cuda()
-            medicines = medicines.cuda()
-            labels = labels.cuda()
-            seq_lens = seq_lens.cuda()
+        indexes, medicines, labels, seq_lens = get_batch(eval_file[start_idx:end_idx], dim, device)
         outputs = model(indexes, medicines)
-        loss = compute_loss(logits=outputs, target=labels, length=seq_lens).cpu().data.numpy()[0]
+        outputs = outputs.detach()
+        loss = compute_loss(logits=outputs, target=labels, length=seq_lens).item()
         losses.append(loss)
-        pre_labels = torch.max(outputs.cpu().data, 2)[1].numpy()
-        labels = labels.cpu().data.numpy()
-        seq_lens = seq_lens.cpu().data.numpy()
+        output_labels = torch.max(outputs.cpu(), 2)[1].numpy()
+        output_scores = outputs.cpu()[:, :, 1].numpy()
+        labels = labels.cpu().numpy()
+        seq_lens = seq_lens.cpu().numpy()
 
-        for pre_label, label, seq_len in zip(pre_labels, labels, seq_lens):
+        for pre_label, pre_score, label, seq_len in zip(output_labels, output_scores, labels, seq_lens):
             if is_point:
-                pre.append(pre_label[seq_len - 1])
+                pre_labels.append(pre_label[seq_len - 1])
                 ref.append(label[seq_len - 1])
             else:
-                pre += pre_label[:seq_len].tolist()
+                pre_labels += pre_label[:seq_len].tolist()
+                pre_scores += pre_score[:seq_len].tolist()
                 ref += label[:seq_len].tolist()
-                # final_pre_label = pre_label[seq_len - 1]
+
             # if data_type == 'dev':
             #     if sample['label'] == 1 and final_pre_label == 0:
             #         fp.append(sample['name'])
@@ -120,9 +116,9 @@ def evaluate_batch(model, data_num, batch_size, eval_file, dim, use_cuda, data_t
                     ref_points[k].append(label[k - 1])
 
     metrics['loss'] = np.mean(losses)
-    metrics['acc'] = accuracy_score(ref, pre)
-    metrics['roc'] = roc_auc_score(ref, pre)
-    (precisions, recalls, thresholds) = precision_recall_curve(ref, pre)
+    metrics['acc'] = accuracy_score(ref, pre_labels)
+    metrics['roc'] = roc_auc_score(ref, pre_scores)
+    (precisions, recalls, thresholds) = precision_recall_curve(ref, pre_scores)
     metrics['prc'] = auc(recalls, precisions)
     metrics['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
     if data_type == 'eval':
@@ -132,7 +128,7 @@ def evaluate_batch(model, data_num, batch_size, eval_file, dim, use_cuda, data_t
         logger.info('{} hour confusion matrix. AUCROC : {}'.format(int(k / 3), roc_auc_score(ref_points[k], v)))
         logger.info(confusion_matrix(ref_points[k], v))
     logger.info('Full confusion matrix')
-    logger.info(confusion_matrix(ref, pre))
+    logger.info(confusion_matrix(ref, pre_labels))
     return metrics
     # tn, fp, fn, tp = confusion_matrix(auc_ref, auc_pre).ravel()
     # loss_sum = tf.Summary(value=[tf.Summary.Value(tag='{}/loss'.format(data_type), simple_value=metrics['loss']), ])
@@ -160,10 +156,10 @@ class FocalLoss(torch.nn.Module):
             input = input.contiguous().view(-1, input.size(2))  # N,H*W,C => N*H*W,C
         target = target.view(-1, 1)
 
-        logpt = functional.log_softmax(input)
+        logpt = functional.log_softmax(input, dim=-1)
         logpt = logpt.gather(1, target)
         logpt = logpt.view(-1)
-        pt = Variable(logpt.data.exp())
+        pt = logpt.exp()
         if self.alpha is not None:
             if self.alpha.type() != input.data.type():
                 self.alpha = self.alpha.type_as(input.data)

@@ -65,7 +65,7 @@ def preprocess_data(data_path):
     max_len = 0
     seq_len = []
     dead_len, live_len = 0, 0
-    tasks = ['5849', '25000']
+    tasks = ['5849', '25000', '41401', '4019']
     for t in tasks:
         print('Reading raw files of task ' + t)
         path = os.path.join(data_path, t)

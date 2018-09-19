@@ -33,8 +33,8 @@ def parse_args():
                         help='random seed (default: 23333)')
 
     train_settings = parser.add_argument_group('train settings')
-    train_settings.add_argument('--cuda', action='store_true', default=True,
-                                help='use CUDA (default: True)')
+    train_settings.add_argument('--disable_cuda', action='store_true',
+                                help='Disable CUDA')
     train_settings.add_argument('--lr', type=float, default=5e-4,
                                 help='learning rate')
     train_settings.add_argument('--clip', type=float, default=-1,
@@ -53,6 +53,7 @@ def parse_args():
                                 help='optimizer type')
     train_settings.add_argument('--patience', type=int, default=2,
                                 help='num of epochs for train patients')
+    # 4019-60 41401-40 25000-40 5849-30
     train_settings.add_argument('--period', type=int, default=60,
                                 help='period to save batch loss')
 
@@ -77,15 +78,13 @@ def parse_args():
                                 help='whether to use focal loss')
     model_settings.add_argument('--is_atten', type=bool, default=False,
                                 help='whether to use self attention')
-    model_settings.add_argument('--is_highway', type=bool, default=False,
-                                help='whether to use highway connection')
     model_settings.add_argument('--is_gated', type=bool, default=False,
                                 help='whether to use gated conv')
     model_settings.add_argument('--n_head', type=int, default=2,
                                 help='attention head size (default: 2)')
     model_settings.add_argument('--n_kernel', type=int, default=3,
                                 help='kernel size (default: 3)')
-    model_settings.add_argument('--n_level', type=int, default=4,
+    model_settings.add_argument('--n_level', type=int, default=8,
                                 help='# of levels (default: 10)')
     model_settings.add_argument('--n_filter', type=int, default=256,
                                 help='number of hidden units per layer (default: 256)')
@@ -110,21 +109,15 @@ def parse_args():
     return parser.parse_args()
 
 
-def train_one_epoch(model, optimizer, train_num, train_file, dim, args, logger):
+def train_one_epoch(model, optimizer, train_num, train_file, data_dim, args, logger):
     model.train()
     train_loss = []
     n_batch_loss = 0
-    weight = torch.from_numpy(np.asarray([0.8, 0.2], dtype=np.float32))
+    weight = torch.from_numpy(np.array([0.8, 0.2], dtype=np.float32)).to(args.device)
     for batch_idx, batch in enumerate(range(0, train_num, args.batch_train)):
         start_idx = batch
         end_idx = start_idx + args.batch_train
-        indexes, medicines, labels, seq_lens = get_batch(train_file[start_idx:end_idx], dim)
-        if args.cuda:
-            indexes = indexes.cuda()
-            medicines = medicines.cuda()
-            labels = labels.cuda()
-            seq_lens = seq_lens.cuda()
-            weight = weight.cuda()
+        indexes, medicines, labels, seq_lens = get_batch(train_file[start_idx:end_idx], data_dim, args.device)
 
         optimizer.zero_grad()
         outputs = model(indexes, medicines)
@@ -143,13 +136,12 @@ def train_one_epoch(model, optimizer, train_num, train_file, dim, args, logger):
             # 梯度裁剪，输入是(NN参数，最大梯度范数，范数类型=2)，一般默认为L2范数
             torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
         optimizer.step()
-        loss = loss.cpu().data.numpy()[0]
-        n_batch_loss += loss
+        n_batch_loss += loss.item()
         bidx = batch_idx + 1
         if bidx % args.period == 0:
             logger.info('AvgLoss batch [{} {}] - {}'.format(bidx - args.period + 1, bidx, n_batch_loss / args.period))
             n_batch_loss = 0
-        train_loss.append(loss)
+        train_loss.append(loss.item())
 
     avg_train_loss = np.mean(train_loss)
     return avg_train_loss
@@ -178,10 +170,7 @@ def train(args, file_paths, dim):
     logger.info('Index dim {} Medicine dim {}'.format(dim[0], dim[1]))
     logger.info('Initialize the model...')
     model = TCN(input_size=dim[0]+dim[1], output_size=args.n_class, n_channel=[args.n_filter]*args.n_level,
-                n_kernel=args.n_kernel, dropout=args.dropout, logger=logger)
-    if args.cuda:
-        model.cuda()
-    print(model.parameters())
+                n_kernel=args.n_kernel, dropout=args.dropout, logger=logger).to(device=args.device)
     lr = args.lr
     optimizer = getattr(optim, args.optim)(model.parameters(), lr=lr, weight_decay=args.weight_decay)
     # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
@@ -195,7 +184,8 @@ def train(args, file_paths, dim):
         logger.info('Epoch {} AvgLoss {}'.format(ep, avg_loss))
 
         logger.info('Evaluating the model for epoch {}'.format(ep))
-        eval_metrics = evaluate_batch(model, eval_num, args.batch_eval, eval_file, dim, args.cuda, 'eval', args.is_point, logger)
+        eval_metrics = evaluate_batch(model, eval_num, args.batch_eval, eval_file, dim, args.device, 'eval',
+                                      args.is_point, logger)
         logger.info('Dev Loss: {}'.format(eval_metrics['loss']))
         logger.info('Dev Acc: {}'.format(eval_metrics['acc']))
         logger.info('Dev AUROC: {}'.format(eval_metrics['roc']))
@@ -247,9 +237,11 @@ def run():
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        if not args.cuda:
-            print('WARNING: you should probably run with --cuda')
+    args.device = None
+    if torch.cuda.is_available() and not args.disable_cuda:
+        args.device = torch.device('cuda')
+    else:
+        args.device = torch.device('cpu')
     logger.info('Preparing the directories...')
     args.raw_dir = args.raw_dir + args.task
     args.preprocessed_dir = args.preprocessed_dir + args.task

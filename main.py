@@ -37,13 +37,13 @@ def parse_args():
     train_settings = parser.add_argument_group('train settings')
     # 5849=[4800, 40, 160, 40, 64] 25000=[4950, 33, 165, 38, 25] 4019=[11700, 130, 390, 98, 64]
     # 41401 = [7800, 52, 260, 40, 64] 208=[
-    train_settings.add_argument('--num_steps', type=int, default=4800,
+    train_settings.add_argument('--num_steps', type=int, default=4950,
                                 help='num of step')
-    train_settings.add_argument('--period', type=int, default=40,
+    train_settings.add_argument('--period', type=int, default=33,
                                 help='period to save batch loss')
-    train_settings.add_argument('--checkpoint', type=int, default=160,
+    train_settings.add_argument('--checkpoint', type=int, default=165,
                                 help='checkpoint for evaluation')
-    train_settings.add_argument('--eval_num_batches', type=int, default=40,
+    train_settings.add_argument('--eval_num_batches', type=int, default=38,
                                 help='num of batches for evaluation')
 
     train_settings.add_argument('--optim', default='adam',
@@ -56,7 +56,7 @@ def parse_args():
                                 help='dropout keep rate')
     train_settings.add_argument('--train_batch', type=int, default=32,
                                 help='train batch size')
-    train_settings.add_argument('--dev_batch', type=int, default=64,
+    train_settings.add_argument('--dev_batch', type=int, default=25,
                                 help='dev batch size')
     train_settings.add_argument('--epochs', type=int, default=30,
                                 help='train epochs')
@@ -100,7 +100,7 @@ def parse_args():
                                 help='num of input attention head')
     model_settings.add_argument('--step_att', type=bool, default=True,
                                 help='whether to use input step attention')
-    model_settings.add_argument('--block_stp', type=int, default=2,
+    model_settings.add_argument('--block_stp', type=int, default=4,
                                 help='num of block for step attention')
     model_settings.add_argument('--head_stp', type=int, default=4,
                                 help='num of step attention head')
@@ -112,9 +112,9 @@ def parse_args():
                                 help='whether to use gated conv')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--task', default='4019',
+    path_settings.add_argument('--task', default='25000',
                                help='the task name')
-    path_settings.add_argument('--model', default='LSTM',
+    path_settings.add_argument('--model', default='DIMM',
                                help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
@@ -159,8 +159,8 @@ def train(args, file_paths, dim):
     train_iterator = train_dataset.make_one_shot_iterator()
     dev_iterator = dev_dataset.make_one_shot_iterator()
     logger.info('Initialize the model...')
-    model = bi_RNN_Model(args, iterator, dim, logger)
-    # model = DIMM_Model(args, iterator, dim, logger)
+    # model = bi_RNN_Model(args, iterator, dim, logger)
+    model = DIMM_Model(args, iterator, dim, logger)
     # model = sep_RNN_Model(args, iterator, dim, logger)
     # model = TCN(args, iterator, dim, logger)
     # model = SAND(args, iterator, dim, logger)

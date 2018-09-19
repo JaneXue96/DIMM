@@ -35,13 +35,13 @@ def parse_args():
 
     train_settings = parser.add_argument_group('train settings')
     # 31113 6921 [14400, 120, 480, 108, 9] [29100, 300, 970, 216, 9]
-    train_settings.add_argument('--num_steps', type=int, default=9600,
+    train_settings.add_argument('--num_steps', type=int, default=14520,
                                 help='num of step')
-    train_settings.add_argument('--period', type=int, default=80,
+    train_settings.add_argument('--period', type=int, default=121,
                                 help='period to save batch loss')
-    train_settings.add_argument('--checkpoint', type=int, default=320,
+    train_settings.add_argument('--checkpoint', type=int, default=484,
                                 help='checkpoint for evaluation')
-    train_settings.add_argument('--eval_num_batches', type=int, default=78,
+    train_settings.add_argument('--eval_num_batches', type=int, default=108,
                                 help='num of batches for evaluation')
 
     train_settings.add_argument('--optim', default='adam',
@@ -52,9 +52,9 @@ def parse_args():
                                 help='weight decay')
     train_settings.add_argument('--dropout_keep_prob', type=float, default=0.65,
                                 help='dropout keep rate')
-    train_settings.add_argument('--train_batch', type=int, default=32,
+    train_settings.add_argument('--train_batch', type=int, default=64,
                                 help='train batch size')
-    train_settings.add_argument('--dev_batch', type=int, default=15,
+    train_settings.add_argument('--dev_batch', type=int, default=9,
                                 help='dev batch size')
     train_settings.add_argument('--epochs', type=int, default=30,
                                 help='train epochs')
@@ -92,7 +92,7 @@ def parse_args():
                                 help='num of input attention head')
     model_settings.add_argument('--step_att', type=bool, default=True,
                                 help='whether to use input step attention')
-    model_settings.add_argument('--block_stp', type=int, default=2,
+    model_settings.add_argument('--block_stp', type=int, default=4,
                                 help='num of block for step attention')
     model_settings.add_argument('--head_stp', type=int, default=4,
                                 help='num of step attention head')
@@ -136,7 +136,7 @@ def train(args, file_paths, dim):
     dev_total = dev_meta['total']
     logger.info('Total dev data {}'.format(dev_total))
     logger.info('Index dim {} Medicine dim {}'.format(dim[0], dim[1]))
-    tasks = ['5849', '25000']
+    tasks = ['5849', '25000', '41401', '4019']
     max_metrics = {}
     for t in tasks:
         max_metrics[t] = {'max_acc': 0.0, 'max_roc': 0.0, 'max_prc': 0.0, 'max_pse': 0.0, 'max_sum': 0.0, 'max_epoch': 0}

@@ -43,10 +43,10 @@ class TemporalBlock(nn.Module):
         self.init_weights()
 
     def init_weights(self):
-        nn.init.kaiming_normal(self.conv1.weight)
-        nn.init.kaiming_normal(self.conv2.weight)
+        nn.init.kaiming_normal_(self.conv1.weight)
+        nn.init.kaiming_normal_(self.conv2.weight)
         if self.downsample is not None:
-            nn.init.kaiming_normal(self.downsample.weight)
+            nn.init.kaiming_normal_(self.downsample.weight)
 
     def forward(self, x):
         out = self.net(x)
