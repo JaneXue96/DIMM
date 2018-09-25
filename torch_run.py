@@ -4,13 +4,12 @@ import logging
 import random
 import ujson as json
 import pickle as pkl
-import numpy as np
 import torch
+from torch.utils.data import DataLoader
 import torch.optim as optim
-# from torch_preprocess import run_prepare
 from torch_model import TCN
-from torch_utils import get_batch, compute_loss, evaluate_batch, FocalLoss
-from torch_loader import run_prepare
+from torch_utils import FocalLoss, train_one_epoch, evaluate_one_epoch
+from torch_loader import run_prepare, MyDataset, PadCollate
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = '3'
 
@@ -55,7 +54,7 @@ def parse_args():
     train_settings.add_argument('--patience', type=int, default=2,
                                 help='num of epochs for train patients')
     # 4019-60 41401-40 25000-40 5849-30
-    train_settings.add_argument('--period', type=int, default=60,
+    train_settings.add_argument('--period', type=int, default=30,
                                 help='period to save batch loss')
 
     model_settings = parser.add_argument_group('model settings')
@@ -93,7 +92,7 @@ def parse_args():
                                 help='class size (default: 2)')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--task', default='4019',
+    path_settings.add_argument('--task', default='5849',
                                help='the task name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
@@ -110,60 +109,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def train_one_epoch(model, optimizer, train_num, train_file, data_dim, args, logger):
-    model.train()
-    train_loss = []
-    n_batch_loss = 0
-    weight = torch.from_numpy(np.array([0.8, 0.2], dtype=np.float32)).to(args.device)
-    for batch_idx, batch in enumerate(range(0, train_num, args.batch_train)):
-        start_idx = batch
-        end_idx = start_idx + args.batch_train
-        indexes, medicines, labels, seq_lens = get_batch(train_file[start_idx:end_idx], data_dim, args.device)
-
-        optimizer.zero_grad()
-        outputs = model(indexes, medicines)
-        # loss = compute_loss(logits=outputs, target=labels, length=seq_lens)
-        if args.is_fc:
-            criterion = FocalLoss(gamma=2, alpha=0.75)
-        else:
-            criterion = torch.nn.CrossEntropyLoss(weight)
-        loss = criterion(outputs.view(-1, args.n_class), labels.view(-1))
-        # params = model.state_dict()
-        # l2_reg = torch.autograd.Variable(torch.FloatTensor(1), requires_grad=True).cuda()
-        # l2_reg = l2_reg + params['linear.weight'].norm(2) + params['linear.bias'].norm(2)
-        # loss += l2_reg * args.weight_decay
-        loss.backward()
-        if args.clip > 0:
-            # 梯度裁剪，输入是(NN参数，最大梯度范数，范数类型=2)，一般默认为L2范数
-            torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
-        optimizer.step()
-        n_batch_loss += loss.item()
-        bidx = batch_idx + 1
-        if bidx % args.period == 0:
-            logger.info('AvgLoss batch [{} {}] - {}'.format(bidx - args.period + 1, bidx, n_batch_loss / args.period))
-            n_batch_loss = 0
-        train_loss.append(loss.item())
-
-    avg_train_loss = np.mean(train_loss)
-    return avg_train_loss
-    # avg_train_acc = np.mean(train_acc)
-    # logger.info('Epoch {} Average Loss {} Average Acc {}'.format(ep, avg_train_loss, avg_train_acc))
-    # loss_sum = tf.Summary(value=[tf.Summary.Value(tag="model/loss", simple_value=avg_train_loss), ])
-    # acc_sum = tf.Summary(value=[tf.Summary.Value(tag="model/acc", simple_value=avg_train_acc), ])
-    # writer.add_summary(loss_sum, epoch)
-    # writer.add_summary(acc_sum, epoch)
-
-
 def train(args, file_paths):
     logger = logging.getLogger('Medical')
-    logger.info('Loading train file...')
-    with open(file_paths.train_file, 'rb') as fh:
-        train_file = pkl.load(fh)
-    fh.close()
-    logger.info('Loading eval file...')
-    with open(file_paths.eval_file, 'rb') as fh:
-        eval_file = pkl.load(fh)
-    fh.close()
+    logger.info('Loading data sets...')
+    train_set = MyDataset(file_paths.train_file)
+    test_set = MyDataset(file_paths.test_file)
+    train_loader = DataLoader(train_set, batch_size=args.batch_train, shuffle=True, num_workers=4, collate_fn=PadCollate())
+    test_loader = DataLoader(test_set, batch_size=args.batch_eval, num_workers=4, collate_fn=PadCollate())
     logger.info('Loading meta...')
     with open(file_paths.meta, 'rb') as fh:
         meta = pkl.load(fh)
@@ -190,12 +142,11 @@ def train(args, file_paths):
     FALSE = []
     for ep in range(1, args.epochs + 1):
         logger.info('Training the model for epoch {}'.format(ep))
-        avg_loss = train_one_epoch(model, optimizer, train_num, train_file, dim, args, logger)
+        avg_loss = train_one_epoch(model, optimizer, train_loader, args, logger)
         logger.info('Epoch {} AvgLoss {}'.format(ep, avg_loss))
 
         logger.info('Evaluating the model for epoch {}'.format(ep))
-        eval_metrics = evaluate_batch(model, eval_num, args.batch_eval, eval_file, dim, args.device, 'eval',
-                                      args.is_point, logger)
+        eval_metrics = evaluate_one_epoch(model, test_loader, args.device, 'eval', args.is_point, logger)
         logger.info('Dev Loss: {}'.format(eval_metrics['loss']))
         logger.info('Dev Acc: {}'.format(eval_metrics['acc']))
         logger.info('Dev AUROC: {}'.format(eval_metrics['roc']))
@@ -211,7 +162,6 @@ def train(args, file_paths):
             max_sum = dev_sum
             max_epoch = ep
         scheduler.step(metrics=eval_metrics['roc'])
-        random.shuffle(train_file)
 
     logger.info('Max Acc {}'.format(max_acc))
     logger.info('Max AUROC {}'.format(max_roc))
@@ -265,20 +215,15 @@ def run():
     class FilePaths(object):
         def __init__(self):
             # 运行记录文件
-            self.train_file = os.path.join(args.preprocessed_dir, 'train.pkl')
-            self.eval_file = os.path.join(args.preprocessed_dir, 'eval.pkl')
-            self.test_file = os.path.join(args.preprocessed_dir, 'test.pkl')
+            self.train_file = os.path.join(args.preprocessed_dir, 'train.npy')
+            self.test_file = os.path.join(args.preprocessed_dir, 'test.npy')
             # 计数文件
             self.meta = os.path.join(args.preprocessed_dir, 'meta.pkl')
             self.shape_meta = os.path.join(args.preprocessed_dir, 'shape_meta.pkl')
 
     file_paths = FilePaths()
     if args.prepare:
-        # max_seq_len, index_dim = run_prepare(args, file_paths)
         run_prepare(args)
-        # with open(file_paths.shape_meta, 'wb') as fh:
-        #     pkl.dump({'max_len': max_seq_len, 'dim': index_dim}, fh)
-        # fh.close()
     if args.train:
         train(args, file_paths)
 

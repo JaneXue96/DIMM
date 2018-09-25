@@ -1,9 +1,11 @@
 import torch
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
+import os
 
 
-def pad_tensor(vec, pad, dim):
+def pad_tensor(vec, pad, dim, vec_type):
     """
     args:
         vec - tensor to pad
@@ -14,7 +16,7 @@ def pad_tensor(vec, pad, dim):
     """
     pad_size = list(vec.shape)
     pad_size[dim] = pad - vec.size(dim)
-    return torch.cat([vec, torch.zeros(*pad_size)], dim=dim)
+    return torch.cat([vec, torch.zeros(*pad_size, dtype=vec_type)], dim=dim)
 
 
 class PadCollate:
@@ -41,16 +43,17 @@ class PadCollate:
         # find longest sequence
         max_len = max(map(lambda x: x[0].shape[self.dim], batch))
         # pad according to max_len
-        batch = map(lambda x_y: (pad_tensor(x_y[0], pad=max_len, dim=self.dim),
-                                 pad_tensor(x_y[1], pad=max_len, dim=self.dim),
-                                 pad_tensor(x_y[2], pad=max_len, dim=self.dim)),
-                    batch)
+        padded_batch = list(map(lambda x_y: (pad_tensor(x_y[0], max_len, self.dim, torch.float),
+                                             pad_tensor(x_y[1], max_len, self.dim, torch.float),
+                                             pad_tensor(x_y[2], max_len, self.dim, torch.long),
+                                             x_y[3]),
+                                batch))
         # stack all
-        xs = torch.stack(map(lambda x: x[0], batch), dim=0)
-        ys = torch.stack(map(lambda x: x[1], batch), dim=0)
-        zs = torch.stack(map(lambda x: x[2], batch), dim=0)
-        # zs = torch.LongTensor(map(lambda x: x[2], batch))
-        return xs, ys, zs
+        xs = torch.stack(tuple(map(lambda x: x[0], padded_batch)), dim=0)
+        ys = torch.stack(tuple(map(lambda x: x[1], padded_batch)), dim=0)
+        zs = torch.stack(tuple(map(lambda x: x[2], padded_batch)), dim=0)
+        ls = torch.LongTensor(tuple(map(lambda x: x[3], padded_batch)))
+        return xs, ys, zs, ls
 
     def __call__(self, batch):
         return self.pad_collate(batch)
@@ -58,16 +61,35 @@ class PadCollate:
 
 class MyDataset(torch.utils.data.Dataset):
     def __init__(self, path_npy):
-        self.raw_file = path_npy
+        self.raw_file = np.load(path_npy)
 
     def __getitem__(self, index):
         file_path = self.raw_file[index]
         raw_sample = pd.read_csv(file_path, sep=',')
         raw_sample = raw_sample.fillna(0)
-        treat = raw_sample.iloc[:, 209:].as_matrix()
-        measure = raw_sample.iloc[:, 3:208].as_matrix()
-        label = np.array([int(file_path.split('/')[-1][0])]*len(treat), dtype=np.int32)
-        return measure, treat, label
+        measure = raw_sample.iloc[:, 3:208].as_matrix().astype(np.float32)
+        treat = raw_sample.iloc[:, 209:].as_matrix().astype(np.float32)
+        label = np.array([int(file_path.split('/')[-1][0])] * len(treat), dtype=np.int64)
+        seq_len = len(measure)
+        return torch.from_numpy(measure), torch.from_numpy(treat), torch.from_numpy(label), seq_len
 
     def __len__(self):
         return len(self.raw_file)
+
+
+def gen_path_npy(source_path, target_path, data_type):
+    file_list = []
+    print('Generating {} data path npy...'.format(data_type))
+    for file in tqdm(os.listdir(source_path)):
+        file = os.path.join(source_path, file)
+        file_list.append(file)
+    file_npy = np.array(file_list)
+    target_path = os.path.join(target_path, data_type + '.npy')
+
+    np.save(target_path, file_npy)
+
+
+def run_prepare(config):
+    data_type = ['train', 'test']
+    for t in data_type:
+        gen_path_npy(os.path.join(config.raw_dir, t), config.preprocessed_dir, t)
