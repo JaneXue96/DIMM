@@ -41,7 +41,7 @@ def _sequence_mask(sequence_length, max_len=None):
     return seq_range_expand < seq_length_expand
 
 
-def compute_loss(logits, target, length):
+def compute_loss(logits, target, length, weight):
     """
     Args:
         logits: A Variable containing a FloatTensor of size
@@ -60,6 +60,7 @@ def compute_loss(logits, target, length):
     logits_flat = logits.view(-1, logits.size(-1))
     # log_probs_flat: (batch * max_len, num_classes)
     log_probs_flat = functional.log_softmax(logits_flat, dim=len(logits_flat.size()) - 1)
+    log_probs_flat = torch.mul(log_probs_flat, weight)
     # target_flat: (batch * max_len, 1)
     target_flat = target.view(-1, 1)
     # losses_flat: (batch * max_len, 1)
@@ -147,11 +148,12 @@ def train_one_epoch(model, optimizer, loader, args, logger):
         indexes, medicines, labels, seq_lens = tuple(map(lambda x: x.to(args.device), batch))
         optimizer.zero_grad()
         outputs = model(indexes, medicines)
-        if args.is_fc:
-            criterion = FocalLoss(gamma=2, alpha=0.75)
-        else:
-            criterion = torch.nn.CrossEntropyLoss(weight)
-        loss = criterion(outputs.view(-1, args.n_class), labels.view(-1))
+        # if args.is_fc:
+        #     criterion = FocalLoss(gamma=2, alpha=0.75)
+        # else:
+        #     criterion = torch.nn.CrossEntropyLoss(weight)
+        # loss = criterion(outputs.view(-1, args.n_class), labels.view(-1))
+        loss = compute_loss(logits=outputs, target=labels, length=seq_lens, weight=weight)
         loss.backward()
         if args.clip > 0:
             # 梯度裁剪，输入是(NN参数，最大梯度范数，范数类型=2)，一般默认为L2范数
@@ -177,11 +179,12 @@ def evaluate_one_epoch(model, loader, device, data_type, is_point, logger):
     pre_points = {3: [], 18: [], 36: [], 72: [], 144: [], 216: []}
     ref_points = {3: [], 18: [], 36: [], 72: [], 144: [], 216: []}
     model.eval()
+    weight = torch.from_numpy(np.array([0.5, 0.5], dtype=np.float32)).to(device)
     for step, batch in enumerate(loader):
         indexes, medicines, labels, seq_lens = tuple(map(lambda x: x.to(device), batch))
         outputs = model(indexes, medicines)
         outputs = outputs.detach()
-        loss = compute_loss(logits=outputs, target=labels, length=seq_lens).item()
+        loss = compute_loss(logits=outputs, target=labels, length=seq_lens, weight=weight).item()
         losses.append(loss)
         output_labels = torch.max(outputs.cpu(), 2)[1].numpy()
         output_scores = outputs.cpu()[:, :, 1].numpy()

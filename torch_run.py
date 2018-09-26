@@ -1,7 +1,6 @@
 import os
 import argparse
 import logging
-import random
 import ujson as json
 import pickle as pkl
 import torch
@@ -114,8 +113,8 @@ def train(args, file_paths):
     logger.info('Loading data sets...')
     train_set = MyDataset(file_paths.train_file)
     test_set = MyDataset(file_paths.test_file)
-    train_loader = DataLoader(train_set, batch_size=args.batch_train, shuffle=True, num_workers=4, collate_fn=PadCollate())
-    test_loader = DataLoader(test_set, batch_size=args.batch_eval, num_workers=4, collate_fn=PadCollate())
+    train_loader = DataLoader(train_set, batch_size=args.batch_train, shuffle=True, num_workers=6, collate_fn=PadCollate())
+    test_loader = DataLoader(test_set, batch_size=args.batch_eval, num_workers=6, collate_fn=PadCollate())
     logger.info('Loading meta...')
     with open(file_paths.meta, 'rb') as fh:
         meta = pkl.load(fh)
