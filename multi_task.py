@@ -76,7 +76,7 @@ def parse_args():
                                 help='Number of threads in input pipeline')
     model_settings.add_argument('--capacity', type=int, default=20000,
                                 help='Batch size of data set shuffle')
-    model_settings.add_argument('--is_map', type=bool, default=True,
+    model_settings.add_argument('--is_map', type=bool, default=False,
                                 help='whether to encoding input')
     model_settings.add_argument('--is_bi', type=bool, default=True,
                                 help='whether to use bi-rnn')
@@ -86,6 +86,10 @@ def parse_args():
                                 help='whether to use focal loss')
     model_settings.add_argument('--ipt_att', type=bool, default=True,
                                 help='whether to use input self attention')
+    model_settings.add_argument('--intra_att', type=bool, default=True,
+                                help='whether to use self attention')
+    model_settings.add_argument('--inter_att', type=bool, default=True,
+                                help='whether to use cross attention')
     model_settings.add_argument('--block_ipt', type=int, default=4,
                                 help='num of block for input attention')
     model_settings.add_argument('--head_ipt', type=int, default=1,
@@ -100,7 +104,7 @@ def parse_args():
     path_settings = parser.add_argument_group('path settings')
     path_settings.add_argument('--task', default='multi_task',
                                help='the task name')
-    path_settings.add_argument('--model', default='DIMM',
+    path_settings.add_argument('--model', default='DIMM_step_att',
                                help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
@@ -161,7 +165,7 @@ def train(args, file_paths, dim):
     with tf.Session(config=sess_config) as sess:
         # writer = tf.summary.FileWriter(args.summary_dir)
         sess.run(tf.global_variables_initializer())
-        # saver = tf.train.Saver()
+        saver = tf.train.Saver()
         train_handle = sess.run(train_iterator.string_handle())
         dev_handle = sess.run(dev_iterator.string_handle())
         max_sum, max_epoch, task_sum = 0, 0, 0
@@ -177,8 +181,9 @@ def train(args, file_paths, dim):
         sess.run(tf.assign(model.is_train, tf.constant(True, dtype=tf.bool)))
         sess.run(tf.assign(model.n_batch, tf.constant(args.train_batch, dtype=tf.int32)))
 
-        for global_step in range(1, args.num_steps + 1):
-            sess.run(tf.assign(model.global_step, tf.constant(global_step + 1, dtype=tf.int32)))
+        for _ in range(1, args.num_steps + 1):
+            global_step = sess.run(model.global_step) + 1
+            # sess.run(tf.assign(model.global_step, tf.constant(global_step + 1, dtype=tf.int32)))
             loss, train_op = sess.run([model.loss, model.train_op], feed_dict={handle: train_handle})
             if global_step % args.period == 0:
                 logger.info('Period point {} Loss {}'.format(global_step, loss))
@@ -190,11 +195,12 @@ def train(args, file_paths, dim):
                 sess.run(tf.assign(model.is_train, tf.constant(False, dtype=tf.bool)))
                 train_metrics = evaluate_batch(model, args.eval_num_batches, train_eval_file, sess, 'train',
                                                handle, train_handle, args.is_point, logger)
-                logger.info('Train Loss - {}'.format(train_metrics['loss']))
-                logger.info('Train Acc - {}'.format(train_metrics['acc']))
-                logger.info('Train AUROC - {}'.format(train_metrics['roc']))
-                logger.info('Train AUPRC - {}'.format(train_metrics['prc']))
-                logger.info('Train PSe - {}'.format(train_metrics['pse']))
+                logger.info('Train Metrics')
+                logger.info('Loss - {} AUROC - {} AUPRC - {} Acc - {} Pse - {}'.format(train_metrics['loss'],
+                                                                                       train_metrics['roc'],
+                                                                                       train_metrics['prc'],
+                                                                                       train_metrics['acc'],
+                                                                                       train_metrics['pse']))
                 # for s in summ:
                 #     writer.add_summary(s, global_step)
                 if train_metrics['roc'] > train_roc:
@@ -207,18 +213,14 @@ def train(args, file_paths, dim):
                 #                              handle, dev_handle, args.is_point, logger)
                 sess.run(tf.assign(model.is_train, tf.constant(True, dtype=tf.bool)))
                 roc = 0
-                # logger.info('Dev Loss - {}'.format(dev_metrics['loss']))
-                # logger.info('Dev Acc - {}'.format(dev_metrics['acc']))
-                # logger.info('Dev AUROC - {}'.format(dev_metrics['roc']))
-                # logger.info('Dev AUPRC - {}'.format(dev_metrics['prc']))
-                # logger.info('Dev PSe - {}'.format(dev_metrics['pse']))
-                # roc = dev_metrics['roc']
                 for t in tasks:
+                    logger.info('Dev Metrics')
                     logger.info('Task - {}'.format(t))
-                    logger.info('Dev Acc - {}'.format(dev_metrics[t]['acc']))
-                    logger.info('Dev AUROC - {}'.format(dev_metrics[t]['roc']))
-                    logger.info('Dev AUPRC - {}'.format(dev_metrics[t]['prc']))
-                    logger.info('Dev PSe - {}'.format(dev_metrics[t]['pse']))
+                    logger.info('Loss - {} AUROC - {} AUPRC - {} Acc - {} Pse - {}'.format(dev_metrics[t]['loss'],
+                                                                                           dev_metrics[t]['roc'],
+                                                                                           train_metrics['prc'],
+                                                                                           train_metrics['acc'],
+                                                                                           train_metrics['pse']))
                     roc += dev_metrics[t]['roc']
                     max_metrics[t]['max_acc'] = max((dev_metrics[t]['acc'], max_metrics[t]['max_acc']))
                     max_metrics[t]['max_roc'] = max(dev_metrics[t]['roc'], max_metrics[t]['max_roc'])
@@ -229,8 +231,6 @@ def train(args, file_paths, dim):
                     if dev_sum > max_metrics[t]['max_sum']:
                         max_metrics[t]['max_sum'] = dev_sum
                         max_metrics[t]['max_epoch'] = global_step // args.checkpoint
-                        # filename = os.path.join(args.model_dir, "model_{}.ckpt".format(global_step))
-                        # saver.save(sess, filename)
                 if roc > roc_save:
                     roc_save = roc
                     patience = 0
@@ -243,36 +243,21 @@ def train(args, file_paths, dim):
                     logger.info('Learning rate reduced to {}'.format(lr))
                 sess.run(tf.assign(model.lr, tf.constant(lr, dtype=tf.float32)))
 
-                # max_acc = max((dev_metrics['acc'], max_acc))
-                # max_roc = max(dev_metrics['roc'], max_roc)
-                # max_prc = max(dev_metrics['prc'], max_prc)
-                # max_pse = max(dev_metrics['pse'], max_pse)
-                # dev_sum = dev_metrics['roc'] + dev_metrics['prc'] + dev_metrics['pse']
-                # if dev_sum > max_sum:
-                #     max_sum = dev_sum
-                #     max_epoch = global_step // args.checkpoint
-                #     if args.is_map:
-                #         iw = sess.run(index_W)
-                #         mw = sess.run(medicine_W)
                 if task_sum > max_sum:
                     max_sum = task_sum
                     max_epoch = global_step // args.checkpoint
-                    # filename = os.path.join(args.model_dir, "model_{}.ckpt".format(global_step))
-                    # saver.save(sess, filename)
+                    filename = os.path.join(args.model_dir, "model_{}.ckpt".format(global_step))
+                    saver.save(sess, filename)
                     if args.is_map:
                         iw = sess.run(index_W)
                         mw = sess.run(medicine_W)
         logger.info('Max Train AUROC - {}'.format(train_roc))
         logger.info('Max Dev epoch - {}'.format(max_epoch))
-        # logger.info('Max Acc - {}'.format(max_acc))
-        # logger.info('Max AUROC - {}'.format(max_roc))
-        # logger.info('Max AUPRC - {}'.format(max_prc))
-        # logger.info('Max PSE - {}'.format(max_pse))
         for t in tasks:
             logger.info('Task - {}'.format(t))
-            logger.info('Max Acc - {}'.format(max_metrics[t]['max_acc']))
             logger.info('Max AUROC - {}'.format(max_metrics[t]['max_roc']))
             logger.info('Max AUPRC - {}'.format(max_metrics[t]['max_prc']))
+            logger.info('Max Acc - {}'.format(max_metrics[t]['max_acc']))
             logger.info('Max PSE - {}'.format(max_metrics[t]['max_pse']))
             logger.info('Max Epoch - {}'.format(max_metrics[t]['max_epoch']))
         if args.is_map:

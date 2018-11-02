@@ -42,19 +42,22 @@ def get_dataset(record_file, parser, config):
     return dataset
 
 
-def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_handle, is_point, logger, is_single=True):
+def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_handle, is_point, logger,
+                   is_single=True):
     losses = []
     pre_scores, pre_labels, ref_labels = [], [], []
     fp = []
     fn = []
     names = []
     metrics = {}
-    pre_points = {3: [], 18: [], 36: [], 72: [], 144: [], 216: []}
-    ref_points = {3: [], 18: [], 36: [], 72: [], 144: [], 216: []}
+    hour_metrics = []
+    pre_points = {3 * k: [] for k in range(1, 73)}
+    ref_points = {3 * k: [] for k in range(1, 73)}
     for _ in range(num_batches):
         patient_ids, loss, labels, scores, seq_lens = sess.run([model.id, model.loss, model.pre_labels,
                                                                 model.pre_scores, model.seq_len],
-                                                               feed_dict={handle: str_handle} if handle is not None else None)
+                                                               feed_dict={
+                                                                   handle: str_handle} if handle is not None else None)
         losses.append(loss)
         for pid, pre_label, pre_score, seq_len in zip(patient_ids, labels, scores, seq_lens):
             sample = eval_file[str(pid)]
@@ -72,13 +75,12 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
                     fp.append(sample['name'])
                 if sample['label'] == 0 and final_pre_label == 1:
                     fn.append(sample['name'])
+                for k, v in pre_points.items():
+                    if seq_len >= k:
+                        v.append(pre_score[k - 1])
+                        ref_points[k].append(sample['label'])
             else:
                 names.append(sample['name'])
-
-            for k, v in pre_points.items():
-                if seq_len >= k:
-                    v.append(pre_label[k - 1])
-                    ref_points[k].append(sample['label'])
             # ref_score = sample['score']
             # mses.append(mean_squared_error(sample['score'][:seq_len], pre_score[:seq_len]))
 
@@ -88,17 +90,16 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
     (precisions, recalls, thresholds) = precision_recall_curve(ref_labels, pre_scores)
     metrics['prc'] = auc(recalls, precisions)
     metrics['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
-    if is_single:
-        if data_type == 'dev':
-            metrics['fp'] = fp
-            metrics['fn'] = fn
-        else:
-            metrics['name'] = names
+    if data_type == 'dev':
+        metrics['fp'] = fp
+        metrics['fn'] = fn
         for k, v in pre_points.items():
-            logger.info('{} hour confusion matrix. AUCROC : {}'.format(int(k / 3), roc_auc_score(ref_points[k], v)))
-            logger.info(confusion_matrix(ref_points[k], v))
-        logger.info('Full confusion matrix')
-        logger.info(confusion_matrix(ref_labels, pre_labels))
+            # logger.info('{} hour confusion matrix. AUCROC : {}'.format(int(k / 3), roc_auc_score(ref_points[k], v)))
+            hour_metrics.append(cal_metrics(ref_points[k], v))
+    else:
+        metrics['name'] = names
+    logger.info('Full confusion matrix')
+    logger.info(confusion_matrix(ref_labels, pre_labels))
     # tn, fp, fn, tp = confusion_matrix(auc_ref, auc_pre).ravel()
 
     loss_sum = tf.Summary(value=[tf.Summary.Value(tag='{}/loss'.format(data_type), simple_value=metrics['loss']), ])
@@ -106,4 +107,15 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
     # mse_sum = tf.Summary(value=[tf.Summary.Value(tag="eval/mse", simple_value=avg_mse), ])
     auc_sum = tf.Summary(value=[tf.Summary.Value(tag='{}/roc'.format(data_type), simple_value=metrics['roc']), ])
     prc_sum = tf.Summary(value=[tf.Summary.Value(tag='{}/prc'.format(data_type), simple_value=metrics['prc']), ])
-    return metrics, (loss_sum, acc_sum, auc_sum, prc_sum)
+    return metrics, hour_metrics, (loss_sum, acc_sum, auc_sum, prc_sum)
+
+
+def cal_metrics(ref, pred):
+    metrics = {}
+    metrics['acc'] = accuracy_score(ref, pred)
+    metrics['roc'] = roc_auc_score(ref, pred)
+    (precisions, recalls, thresholds) = precision_recall_curve(ref, pred)
+    metrics['prc'] = auc(recalls, precisions)
+    metrics['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
+
+    return metrics

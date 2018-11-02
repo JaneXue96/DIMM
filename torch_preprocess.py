@@ -91,9 +91,9 @@ def divide_data(train_data, test_data):
     for file in tqdm(os.listdir(train_data)):
         total += 1
         if file.startswith('0'):
-            dead = 0
-        else:
             dead = 1
+        else:
+            dead = 0
         raw_sample = pd.read_csv(os.path.join(train_data, file), sep=',')
         raw_sample = raw_sample.fillna(0)
         medicine = raw_sample.iloc[:, 209:].as_matrix()

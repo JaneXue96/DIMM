@@ -115,22 +115,22 @@ def train(args, file_paths):
     test_set = MyDataset(file_paths.test_file)
     train_loader = DataLoader(train_set, batch_size=args.batch_train, shuffle=True, num_workers=6, collate_fn=PadCollate())
     test_loader = DataLoader(test_set, batch_size=args.batch_eval, num_workers=6, collate_fn=PadCollate())
-    logger.info('Loading meta...')
-    with open(file_paths.meta, 'rb') as fh:
-        meta = pkl.load(fh)
-    fh.close()
-    logger.info('Loading shape meta...')
-    with open(file_paths.shape_meta, 'rb') as fh:
-        shape_meta = pkl.load(fh)
-    fh.close()
-    dim = shape_meta['dim']
-    train_num = meta['train_total']
-    eval_num = meta['test_total']
-    logger.info('Num train data {} Num eval data {}'.format(train_num, eval_num))
-    logger.info('Index dim {} Medicine dim {}'.format(dim[0], dim[1]))
+    # logger.info('Loading meta...')
+    # with open(file_paths.meta, 'rb') as fh:
+    #     meta = pkl.load(fh)
+    # fh.close()
+    # logger.info('Loading shape meta...')
+    # with open(file_paths.shape_meta, 'rb') as fh:
+    #     shape_meta = pkl.load(fh)
+    # fh.close()
+    # dim = shape_meta['dim']
+    # train_num = meta['train_total']
+    # eval_num = meta['test_total']
+    # logger.info('Num train data {} Num eval data {}'.format(train_num, eval_num))
+    # logger.info('Index dim {} Medicine dim {}'.format(dim[0], dim[1]))
 
     logger.info('Initialize the model...')
-    model = TCN(input_size=dim[0]+dim[1], output_size=args.n_class, n_channel=[args.n_filter]*args.n_level,
+    model = TCN(input_size=205 + 241, output_size=args.n_class, n_channel=[args.n_filter]*args.n_level,
                 n_kernel=args.n_kernel, dropout=args.dropout, logger=logger).to(device=args.device)
     lr = args.lr
     optimizer = getattr(optim, args.optim)(model.parameters(), lr=lr, weight_decay=args.weight_decay)

@@ -94,6 +94,10 @@ def parse_args():
                                 help='number of hidden units per layer (default: 100)')
     model_settings.add_argument('--ipt_att', type=bool, default=True,
                                 help='whether to use input self attention')
+    model_settings.add_argument('--intra_att', type=bool, default=True,
+                                help='whether to use self attention')
+    model_settings.add_argument('--inter_att', type=bool, default=True,
+                                help='whether to use cross attention')
     model_settings.add_argument('--block_ipt', type=int, default=4,
                                 help='num of block for input attention')
     model_settings.add_argument('--head_ipt', type=int, default=1,
@@ -172,14 +176,14 @@ def train(args, file_paths, dim):
     with tf.Session(config=sess_config) as sess:
         writer = tf.summary.FileWriter(args.summary_dir)
         sess.run(tf.global_variables_initializer())
-        # saver = tf.train.Saver()
+        saver = tf.train.Saver()
         train_handle = sess.run(train_iterator.string_handle())
         dev_handle = sess.run(dev_iterator.string_handle())
         max_acc, max_roc, max_prc, max_pse, max_sum, max_epoch = 0, 0, 0, 0, 0, 0
-        train_roc = 0
+        train_roc, roc_save, patience = 0, 0, 0
+        max_hour = []
         NAMES = None
         FALSE = []
-        roc_save, patience = 0, 0
         lr = args.lr
         if args.is_map:
             index_W = tf.get_default_graph().get_tensor_by_name('input_encoding/index/dense/W:0')
@@ -188,8 +192,9 @@ def train(args, file_paths, dim):
         sess.run(tf.assign(model.is_train, tf.constant(True, dtype=tf.bool)))
         sess.run(tf.assign(model.n_batch, tf.constant(args.train_batch, dtype=tf.int32)))
 
-        for global_step in range(1, args.num_steps + 1):
-            sess.run(tf.assign(model.global_step, tf.constant(global_step + 1, dtype=tf.int32)))
+        for _ in range(1, args.num_steps + 1):
+            global_step = sess.run(model.global_step) + 1
+            # sess.run(tf.assign(model.global_step, tf.constant(global_step + 1, dtype=tf.int32)))
             loss, train_op = sess.run([model.loss, model.train_op], feed_dict={handle: train_handle})
             if global_step % args.period == 0:
                 logger.info('Period point {} Loss {}'.format(global_step, loss))
@@ -201,11 +206,12 @@ def train(args, file_paths, dim):
                 sess.run(tf.assign(model.is_train, tf.constant(False, dtype=tf.bool)))
                 train_metrics, summ = evaluate_batch(model, args.eval_num_batches, train_eval_file, sess, 'train',
                                                      handle, train_handle, args.is_point, logger)
-                logger.info('Train Loss - {}'.format(train_metrics['loss']))
-                logger.info('Train Acc - {}'.format(train_metrics['acc']))
-                logger.info('Train AUROC - {}'.format(train_metrics['roc']))
-                logger.info('Train AUPRC - {}'.format(train_metrics['prc']))
-                logger.info('Train PSe - {}'.format(train_metrics['pse']))
+                logger.info('Train Metrics')
+                logger.info('Loss - {} AUROC - {} AUPRC - {} Acc - {} Pse - {}'.format(train_metrics['loss'],
+                                                                                       train_metrics['roc'],
+                                                                                       train_metrics['prc'],
+                                                                                       train_metrics['acc'],
+                                                                                       train_metrics['pse']))
                 for s in summ:
                     writer.add_summary(s, global_step)
                 if train_metrics['roc'] > train_roc:
@@ -213,14 +219,15 @@ def train(args, file_paths, dim):
                     NAMES = train_metrics['name']
 
                 sess.run(tf.assign(model.n_batch, tf.constant(args.dev_batch, dtype=tf.int32)))
-                dev_metrics, summ = evaluate_batch(model, dev_total // args.dev_batch, dev_eval_file, sess, 'dev',
-                                                   handle, dev_handle, args.is_point, logger)
+                dev_metrics, hour_metrics, summ = evaluate_batch(model, dev_total // args.dev_batch, dev_eval_file,
+                                                                 sess, 'dev', handle, dev_handle, args.is_point, logger)
                 sess.run(tf.assign(model.is_train, tf.constant(True, dtype=tf.bool)))
-                logger.info('Dev Loss - {}'.format(dev_metrics['loss']))
-                logger.info('Dev Acc - {}'.format(dev_metrics['acc']))
-                logger.info('Dev AUROC - {}'.format(dev_metrics['roc']))
-                logger.info('Dev AUPRC - {}'.format(dev_metrics['prc']))
-                logger.info('Dev PSe - {}'.format(dev_metrics['pse']))
+                logger.info('Dev Metrics')
+                logger.info('Loss - {} AUCROC - {} AUCPRC - {} Acc - {} Pse - {}'.format(dev_metrics['loss'],
+                                                                                         dev_metrics['roc'],
+                                                                                         dev_metrics['prc'],
+                                                                                         dev_metrics['acc'],
+                                                                                         dev_metrics['pse']))
                 FALSE.append({'Step': global_step, 'FP': dev_metrics['fp'], 'FN': dev_metrics['fn']})
                 for s in summ:
                     writer.add_summary(s, global_step)
@@ -249,10 +256,11 @@ def train(args, file_paths, dim):
                     # var_values = sess.run(var_names)
                     # for k, v in zip(var_names, var_values):
                     #     print(k, v)
+                    max_hour = hour_metrics
                     max_sum = dev_sum
                     max_epoch = global_step // args.checkpoint
-                    # filename = os.path.join(args.model_dir, "model_{}.ckpt".format(global_step))
-                    # saver.save(sess, filename)
+                    filename = os.path.join(args.model_dir, "model_{}.ckpt".format(global_step))
+                    saver.save(sess, filename)
                     if args.is_map:
                         iw = sess.run(index_W)
                         mw = sess.run(medicine_W)
@@ -262,11 +270,15 @@ def train(args, file_paths, dim):
         logger.info('Max AUPRC - {}'.format(max_prc))
         logger.info('Max PSE - {}'.format(max_pse))
         logger.info('Max Epoch - {}'.format(max_epoch))
-        with open(os.path.join(args.result_dir, args.task + '_FALSE.json'), 'w') as f:
+        with open(os.path.join(args.result_dir, 'Hour.json'), 'w') as f:
+            for hour in max_hour:
+                f.write(json.dumps(hour) + '\n')
+        f.close()
+        with open(os.path.join(args.result_dir, 'FALSE.json'), 'w') as f:
             for record in FALSE:
                 f.write(json.dumps(record) + '\n')
         f.close()
-        with open(os.path.join(args.result_dir, args.task + '_NAME.json'), 'w') as f:
+        with open(os.path.join(args.result_dir, 'NAME.json'), 'w') as f:
             for record in NAMES:
                 f.write(json.dumps(record) + '\n')
         f.close()

@@ -310,40 +310,42 @@
 #     print(outputs)
 
 
-import numpy as np
-import tensorflow as tf
+# import numpy as np
+# import tensorflow as tf
+#
+# t = 1
+# T = 10
+# M = 5
+# W = np.zeros((T, M), dtype=np.float32)
+# for t in range(1, T + 1):
+#     s = M * t / T
+#     for m in range(1, M + 1):
+#         w = pow(1 - abs(s - m) / M, 2)
+#         W[t - 1, m - 1] = w
+#
+# inp = np.random.rand(3, 10, 3)
+#
+#
+# def body(l, L):
+#     # output[:, l-1, :] =
+#     print(tf.tile(tf.expand_dims(Weight[:l, :], 0), [3, 1, 1]))
+#     print(tf.shape(tf.matmul(encodes[:, :, :l], tf.tile(tf.expand_dims(Weight[:l, :], 0), [3, 1, 1]))))
+#     l = l + 1
+#     return l, L
+#
+#
+# def condition(l, L):
+#     return l <= L
+#
+#
+# output = tf.Variable(tf.random_uniform([3, 10, 15], -0.05, 0.05), dtype=tf.float32)
+# encodes = tf.constant(inp, dtype=tf.float32)
+# tf.transpose(encodes, [0, 2, 1])
+# Weight = tf.constant(W, dtype=tf.float32)
+#
+# with tf.Session():
+#     tf.global_variables_initializer().run()
+#     result = tf.while_loop(condition, body, [t, T])
+#     print(result)
 
-t = 1
-T = 10
-M = 5
-W = np.zeros((T, M), dtype=np.float32)
-for t in range(1, T + 1):
-    s = M * t / T
-    for m in range(1, M + 1):
-        w = pow(1 - abs(s - m) / M, 2)
-        W[t - 1, m - 1] = w
 
-inp = np.random.rand(3, 10, 3)
-
-
-def body(l, L):
-    # output[:, l-1, :] =
-    print(tf.tile(tf.expand_dims(Weight[:l, :], 0), [3, 1, 1]))
-    print(tf.shape(tf.matmul(encodes[:, :, :l], tf.tile(tf.expand_dims(Weight[:l, :], 0), [3, 1, 1]))))
-    l = l + 1
-    return l, L
-
-
-def condition(l, L):
-    return l <= L
-
-
-output = tf.Variable(tf.random_uniform([3, 10, 15], -0.05, 0.05), dtype=tf.float32)
-encodes = tf.constant(inp, dtype=tf.float32)
-tf.transpose(encodes, [0, 2, 1])
-Weight = tf.constant(W, dtype=tf.float32)
-
-with tf.Session():
-    tf.global_variables_initializer().run()
-    result = tf.while_loop(condition, body, [t, T])
-    print(result)

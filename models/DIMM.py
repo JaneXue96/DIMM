@@ -7,9 +7,10 @@ from .attention_module import self_transformer
 
 
 class DIMM_Model(object):
-    def __init__(self, args, batch, dim, logger):
+    def __init__(self, args, batch, dim, logger, trainable=True):
         # logging
         self.logger = logger
+        self.trainable = trainable
         # basic config
         self.n_index = dim[0]
         self.n_medicine = dim[1]
@@ -20,6 +21,8 @@ class DIMM_Model(object):
         self.n_label = args.n_class
         self.is_map = args.is_map
         self.ipt_att = args.ipt_att
+        self.inter_att = args.inter_att
+        self.intra_att = args.intra_att
         self.block_ipt = args.block_ipt
         self.head_ipt = args.head_ipt
         self.step_att = args.step_att
@@ -68,7 +71,8 @@ class DIMM_Model(object):
         else:
             self._seq_label()
         self._compute_loss()
-        self._create_train_op()
+        if self.trainable:
+            self._create_train_op()
         self.logger.info('Time to build graph: {} s'.format(time.time() - start_t))
 
     def _encode(self):
@@ -81,19 +85,32 @@ class DIMM_Model(object):
                     self.medicine = dense(self.medicine, hidden=self.n_hidden, initializer=self.initializer)
                     self.medicine = tf.reshape(self.medicine, [-1, self.max_len, self.n_hidden], name='2_3D')
             if self.ipt_att:
-                self.index = self._input_attention(self.index, self.index,
-                                                   self.n_hidden if self.is_map else self.n_index,
-                                                   'i2i_attention')
-                self.i2m = self._input_attention(self.index, self.medicine,
-                                                 self.n_hidden if self.is_map else self.n_index,
-                                                 'i2m_attention')
-                self.medicine = self._input_attention(self.medicine, self.medicine,
-                                                      self.n_hidden if self.is_map else self.n_medicine,
-                                                      'm2m_attention')
-                self.m2i = self._input_attention(self.medicine, self.index,
-                                                 self.n_hidden if self.is_map else self.n_medicine,
-                                                 'm2i_attention')
-            self.input_encodes = tf.concat([self.index, self.medicine, self.i2m, self.m2i], 2)
+                if self.inter_att:
+                    self.i2m = self._input_attention(self.index, self.medicine,
+                                                     self.n_hidden if self.is_map else self.n_index,
+                                                     'i2m_attention')
+                    self.m2i = self._input_attention(self.medicine, self.index,
+                                                     self.n_hidden if self.is_map else self.n_medicine,
+                                                     'm2i_attention')
+                if self.intra_att:
+                    self.index = self._input_attention(self.index, self.index,
+                                                       self.n_hidden if self.is_map else self.n_index,
+                                                       'i2i_attention')
+                    self.medicine = self._input_attention(self.medicine, self.medicine,
+                                                          self.n_hidden if self.is_map else self.n_medicine,
+                                                          'm2m_attention')
+                if self.intra_att and self.inter_att:
+                    self.input_encodes = tf.concat([self.index, self.medicine, self.i2m, self.m2i], 2)
+                elif self.inter_att:
+                    self.input_encodes = tf.concat([self.index, self.medicine], 2)
+                else:
+                    self.input_encodes = tf.concat([self.i2m, self.m2i], 2)
+                # if self.is_map:
+                #     self.input_encodes = dense(self.input_encodes, 2*self.n_hidden, self.initializer)
+            # else:
+            #     self.input_encodes = tf.concat([self.index, self.medicine], 2)
+            #     if self.is_map:
+            #         self.input_encodes = dense(self.input_encodes, 2*self.n_hidden, self.initializer)
             if self.is_train:
                 self.input_encodes = tf.nn.dropout(self.input_encodes, self.dropout_keep_prob)
 
@@ -177,6 +194,9 @@ class DIMM_Model(object):
                 self.optimizer = tf.train.GradientDescentOptimizer(self.lr)
             else:
                 raise NotImplementedError('Unsupported optimizer: {}'.format(self.opt_type))
-            self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, self.all_params), 25)
-            self.train_op = self.optimizer.apply_gradients(zip(self.grads, self.all_params),
+            # self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, self.all_params), 25)
+            grads = self.optimizer.compute_gradients(self.loss)
+            gradients, variables = zip(*grads)
+            capped_grads, _ = tf.clip_by_global_norm(gradients, 25)
+            self.train_op = self.optimizer.apply_gradients(zip(capped_grads, variables),
                                                            global_step=self.global_step)

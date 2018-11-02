@@ -150,6 +150,8 @@ def preprocess_data(data_path):
         length = index.shape[0]
         if length > max_len:
             max_len = length
+        if length == 0:
+            print(file)
         sample = {'patient_id': total,
                   'index': index,
                   'medicine': medicine,

@@ -1,4 +1,5 @@
 import torch
+import torch.utils.data
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
@@ -69,7 +70,8 @@ class MyDataset(torch.utils.data.Dataset):
         raw_sample = raw_sample.fillna(0)
         measure = raw_sample.iloc[:, 3:208].as_matrix().astype(np.float32)
         treat = raw_sample.iloc[:, 209:].as_matrix().astype(np.float32)
-        label = np.array([int(file_path.split('/')[-1][0])] * len(treat), dtype=np.int64)
+        tag = 1 if int(file_path.split('/')[-1][0]) == 0 else 0
+        label = np.array([tag] * len(treat), dtype=np.int64)
         seq_len = len(measure)
         return torch.from_numpy(measure), torch.from_numpy(treat), torch.from_numpy(label), seq_len
 

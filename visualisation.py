@@ -30,9 +30,9 @@ def draw_weights(index_w, medicine_w):
 
 
 if __name__ == '__main__':
-    # tasks = ['5849', '25000', '41401', '4019']
-    tasks = ['208']
+    tasks = ['5849_720', '25000_720', '41401_720', '4019_720']
+    # tasks = ['208']
     for t in tasks:
-        index = np.loadtxt(os.path.join('data/results/', t, 'DIMM',t + '_index_W.txt'), delimiter=',')
+        index = np.loadtxt(os.path.join('data/results/', t, 'DIMM', t + '_index_W.txt'), delimiter=',')
         medicine = np.loadtxt(os.path.join('data/results/', t, 'DIMM', t + '_medicine_W.txt'), delimiter=',')
         draw_weights(index, medicine)
