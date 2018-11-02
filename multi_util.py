@@ -109,6 +109,7 @@ def multi_evaluate(model, num_batches, eval_file, sess, handle, str_handle, is_p
             #         ref_points[k].append(sample['label'])
             # ref_score = sample['score']
             # mses.append(mean_squared_error(sample['score'][:seq_len], pre_score[:seq_len]))
+    avg_loss = np.mean(losses)
     for t in tasks:
         # task_metrics[t]['loss'] = np.mean(losses)
         task_metrics[t]['acc'] = accuracy_score(task_labels[t]['true'], task_labels[t]['pred'])
@@ -116,7 +117,7 @@ def multi_evaluate(model, num_batches, eval_file, sess, handle, str_handle, is_p
         (precisions, recalls, thresholds) = precision_recall_curve(task_labels[t]['true'], task_scores[t])
         task_metrics[t]['prc'] = auc(recalls, precisions)
         task_metrics[t]['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
-    return task_metrics
+    return avg_loss, task_metrics
     # loss_sum = tf.Summary(value=[tf.Summary.Value(tag='{}/loss'.format(data_type), simple_value=metrics['loss']), ])
     # acc_sum = tf.Summary(value=[tf.Summary.Value(tag='{}/acc'.format(data_type), simple_value=metrics['acc']), ])
     # auc_sum = tf.Summary(value=[tf.Summary.Value(tag='{}/roc'.format(data_type), simple_value=metrics['roc']), ])

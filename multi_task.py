@@ -76,7 +76,7 @@ def parse_args():
                                 help='Number of threads in input pipeline')
     model_settings.add_argument('--capacity', type=int, default=20000,
                                 help='Batch size of data set shuffle')
-    model_settings.add_argument('--is_map', type=bool, default=False,
+    model_settings.add_argument('--is_map', type=bool, default=True,
                                 help='whether to encoding input')
     model_settings.add_argument('--is_bi', type=bool, default=True,
                                 help='whether to use bi-rnn')
@@ -84,7 +84,7 @@ def parse_args():
                                 help='whether to predict point label')
     model_settings.add_argument('--is_fc', type=bool, default=False,
                                 help='whether to use focal loss')
-    model_settings.add_argument('--ipt_att', type=bool, default=True,
+    model_settings.add_argument('--ipt_att', type=bool, default=False,
                                 help='whether to use input self attention')
     model_settings.add_argument('--intra_att', type=bool, default=True,
                                 help='whether to use self attention')
@@ -104,7 +104,7 @@ def parse_args():
     path_settings = parser.add_argument_group('path settings')
     path_settings.add_argument('--task', default='multi_task',
                                help='the task name')
-    path_settings.add_argument('--model', default='DIMM_step_att',
+    path_settings.add_argument('--model', default='bi_GRU',
                                help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
@@ -143,7 +143,8 @@ def train(args, file_paths, dim):
     tasks = ['5849', '25000', '41401', '4019']
     max_metrics = {}
     for t in tasks:
-        max_metrics[t] = {'max_acc': 0.0, 'max_roc': 0.0, 'max_prc': 0.0, 'max_pse': 0.0, 'max_sum': 0.0, 'max_epoch': 0}
+        max_metrics[t] = {'max_acc': 0.0, 'max_roc': 0.0, 'max_prc': 0.0, 'max_pse': 0.0, 'max_sum': 0.0,
+                          'max_epoch': 0}
 
     parser = get_record_parser(args.max_len, dim)
     train_dataset = get_batch_dataset(file_paths.train_record_file, parser, args)
@@ -153,7 +154,8 @@ def train(args, file_paths, dim):
     train_iterator = train_dataset.make_one_shot_iterator()
     dev_iterator = dev_dataset.make_one_shot_iterator()
     logger.info('Initialize the model...')
-    model = DIMM_Model(args, iterator, dim, logger)
+    model = bi_RNN_Model(args, iterator, dim, logger)
+    # model = DIMM_Model(args, iterator, dim, logger)
     # model = sep_RNN_Model(args, iterator, dim, logger)
     # model = TCN(args, iterator, dim, logger)
     # model = SAND(args, iterator, dim, logger)
@@ -207,8 +209,8 @@ def train(args, file_paths, dim):
                     train_roc = train_metrics['roc']
 
                 sess.run(tf.assign(model.n_batch, tf.constant(args.dev_batch, dtype=tf.int32)))
-                dev_metrics = multi_evaluate(model, dev_total // args.dev_batch, dev_eval_file, sess,
-                                             handle, dev_handle, args.is_point)
+                dev_loss, dev_metrics = multi_evaluate(model, dev_total // args.dev_batch, dev_eval_file, sess,
+                                                       handle, dev_handle, args.is_point)
                 # dev_metrics = evaluate_batch(model, dev_total // args.dev_batch, dev_eval_file, sess, 'dev',
                 #                              handle, dev_handle, args.is_point, logger)
                 sess.run(tf.assign(model.is_train, tf.constant(True, dtype=tf.bool)))
@@ -216,11 +218,11 @@ def train(args, file_paths, dim):
                 for t in tasks:
                     logger.info('Dev Metrics')
                     logger.info('Task - {}'.format(t))
-                    logger.info('Loss - {} AUROC - {} AUPRC - {} Acc - {} Pse - {}'.format(dev_metrics[t]['loss'],
-                                                                                           dev_metrics[t]['roc'],
-                                                                                           train_metrics['prc'],
-                                                                                           train_metrics['acc'],
-                                                                                           train_metrics['pse']))
+                    logger.info('Loss- {} AUROC - {} AUPRC - {} Acc - {} Pse - {}'.format(dev_loss,
+                                                                                          dev_metrics[t]['roc'],
+                                                                                          train_metrics['prc'],
+                                                                                          train_metrics['acc'],
+                                                                                          train_metrics['pse']))
                     roc += dev_metrics[t]['roc']
                     max_metrics[t]['max_acc'] = max((dev_metrics[t]['acc'], max_metrics[t]['max_acc']))
                     max_metrics[t]['max_roc'] = max(dev_metrics[t]['roc'], max_metrics[t]['max_roc'])

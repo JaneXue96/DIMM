@@ -7,9 +7,10 @@ from .attention_module import self_transformer
 
 
 class bi_RNN_Model(object):
-    def __init__(self, args, batch, dim, logger):
+    def __init__(self, args, batch, dim, logger, trainable=True):
         # logging
         self.logger = logger
+        self.trainable = trainable
         # basic config
         self.n_index = dim[0]
         self.n_medicine = dim[1]
@@ -60,7 +61,8 @@ class bi_RNN_Model(object):
         else:
             self._seq_label()
         self._compute_loss()
-        self._create_train_op()
+        if self.trainable:
+            self._create_train_op()
         self.logger.info('Time to build graph: {} s'.format(time.time() - start_t))
 
     def _encode(self):
@@ -144,6 +146,9 @@ class bi_RNN_Model(object):
                 self.optimizer = tf.train.GradientDescentOptimizer(self.lr)
             else:
                 raise NotImplementedError('Unsupported optimizer: {}'.format(self.opt_type))
-            self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, self.all_params), 25)
-            self.train_op = self.optimizer.apply_gradients(zip(self.grads, self.all_params),
+            # self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, self.all_params), 25)
+            grads = self.optimizer.compute_gradients(self.loss)
+            gradients, variables = zip(*grads)
+            capped_grads, _ = tf.clip_by_global_norm(gradients, 25)
+            self.train_op = self.optimizer.apply_gradients(zip(capped_grads, variables),
                                                            global_step=self.global_step)

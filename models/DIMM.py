@@ -105,12 +105,8 @@ class DIMM_Model(object):
                     self.input_encodes = tf.concat([self.index, self.medicine], 2)
                 else:
                     self.input_encodes = tf.concat([self.i2m, self.m2i], 2)
-                # if self.is_map:
-                #     self.input_encodes = dense(self.input_encodes, 2*self.n_hidden, self.initializer)
-            # else:
-            #     self.input_encodes = tf.concat([self.index, self.medicine], 2)
-            #     if self.is_map:
-            #         self.input_encodes = dense(self.input_encodes, 2*self.n_hidden, self.initializer)
+            else:
+                self.input_encodes = tf.concat([self.index, self.medicine], 2)
             if self.is_train:
                 self.input_encodes = tf.nn.dropout(self.input_encodes, self.dropout_keep_prob)
 
