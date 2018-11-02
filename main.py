@@ -204,8 +204,8 @@ def train(args, file_paths, dim):
             if global_step % args.checkpoint == 0:
                 logger.info('Evaluating the model for epoch {}'.format(global_step // args.checkpoint))
                 sess.run(tf.assign(model.is_train, tf.constant(False, dtype=tf.bool)))
-                train_metrics, summ = evaluate_batch(model, args.eval_num_batches, train_eval_file, sess, 'train',
-                                                     handle, train_handle, args.is_point, logger)
+                train_metrics, _, summ = evaluate_batch(model, args.eval_num_batches, train_eval_file, sess, 'train',
+                                                        handle, train_handle, args.is_point, logger)
                 logger.info('Train Metrics')
                 logger.info('Loss - {} AUROC - {} AUPRC - {} Acc - {} Pse - {}'.format(train_metrics['loss'],
                                                                                        train_metrics['roc'],
@@ -268,7 +268,7 @@ def train(args, file_paths, dim):
         logger.info('Max Acc - {}'.format(max_acc))
         logger.info('Max AUROC - {}'.format(max_roc))
         logger.info('Max AUPRC - {}'.format(max_prc))
-        logger.info('Max PSE - {}'.format(max_pse))
+        logger.info('Max Pse - {}'.format(max_pse))
         logger.info('Max Epoch - {}'.format(max_epoch))
         with open(os.path.join(args.result_dir, 'Hour.json'), 'w') as f:
             for hour in max_hour:

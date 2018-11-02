@@ -52,6 +52,7 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
     metrics = {}
     hour_metrics = []
     pre_points = {3 * k: [] for k in range(1, 73)}
+    score_points = {3 * k: [] for k in range(1, 73)}
     ref_points = {3 * k: [] for k in range(1, 73)}
     for _ in range(num_batches):
         patient_ids, loss, labels, scores, seq_lens = sess.run([model.id, model.loss, model.pre_labels,
@@ -77,7 +78,8 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
                     fn.append(sample['name'])
                 for k, v in pre_points.items():
                     if seq_len >= k:
-                        v.append(pre_score[k - 1])
+                        v.append(pre_label[k - 1])
+                        score_points[k].append(pre_score[k - 1])
                         ref_points[k].append(sample['label'])
             else:
                 names.append(sample['name'])
@@ -95,7 +97,7 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
         metrics['fn'] = fn
         for k, v in pre_points.items():
             # logger.info('{} hour confusion matrix. AUCROC : {}'.format(int(k / 3), roc_auc_score(ref_points[k], v)))
-            hour_metrics.append(cal_metrics(ref_points[k], v))
+            hour_metrics.append(cal_metrics(ref_points[k], score_points[k], v))
     else:
         metrics['name'] = names
     logger.info('Full confusion matrix')
@@ -110,11 +112,11 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
     return metrics, hour_metrics, (loss_sum, acc_sum, auc_sum, prc_sum)
 
 
-def cal_metrics(ref, pred):
+def cal_metrics(ref, pred_scores, pred_labels):
     metrics = {}
-    metrics['acc'] = accuracy_score(ref, pred)
-    metrics['roc'] = roc_auc_score(ref, pred)
-    (precisions, recalls, thresholds) = precision_recall_curve(ref, pred)
+    metrics['acc'] = accuracy_score(ref, pred_labels)
+    metrics['roc'] = roc_auc_score(ref, pred_scores)
+    (precisions, recalls, thresholds) = precision_recall_curve(ref, pred_scores)
     metrics['prc'] = auc(recalls, precisions)
     metrics['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
 
