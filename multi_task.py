@@ -84,7 +84,7 @@ def parse_args():
                                 help='whether to predict point label')
     model_settings.add_argument('--is_fc', type=bool, default=False,
                                 help='whether to use focal loss')
-    model_settings.add_argument('--ipt_att', type=bool, default=False,
+    model_settings.add_argument('--ipt_att', type=bool, default=True,
                                 help='whether to use input self attention')
     model_settings.add_argument('--intra_att', type=bool, default=True,
                                 help='whether to use self attention')
@@ -104,7 +104,7 @@ def parse_args():
     path_settings = parser.add_argument_group('path settings')
     path_settings.add_argument('--task', default='multi_task',
                                help='the task name')
-    path_settings.add_argument('--model', default='bi_GRU',
+    path_settings.add_argument('--model', default='DIMM',
                                help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
@@ -140,8 +140,9 @@ def train(args, file_paths, dim):
     dev_total = dev_meta['total']
     logger.info('Total dev data {}'.format(dev_total))
     logger.info('Index dim {} Medicine dim {}'.format(dim[0], dim[1]))
-    tasks = ['5849', '25000', '41401', '4019']
+    tasks = ['4019', '41401', '25000', '5849']
     max_metrics = {}
+    max_hour = {}
     for t in tasks:
         max_metrics[t] = {'max_acc': 0.0, 'max_roc': 0.0, 'max_prc': 0.0, 'max_pse': 0.0, 'max_sum': 0.0,
                           'max_epoch': 0}
@@ -154,8 +155,8 @@ def train(args, file_paths, dim):
     train_iterator = train_dataset.make_one_shot_iterator()
     dev_iterator = dev_dataset.make_one_shot_iterator()
     logger.info('Initialize the model...')
-    model = bi_RNN_Model(args, iterator, dim, logger)
-    # model = DIMM_Model(args, iterator, dim, logger)
+    # model = bi_RNN_Model(args, iterator, dim, logger)
+    model = DIMM_Model(args, iterator, dim, logger)
     # model = sep_RNN_Model(args, iterator, dim, logger)
     # model = TCN(args, iterator, dim, logger)
     # model = SAND(args, iterator, dim, logger)
@@ -174,7 +175,6 @@ def train(args, file_paths, dim):
         train_roc = 0
         roc_save, patience = 0, 0
         # TODO
-        max_acc, max_roc, max_prc, max_pse, max_sum, max_epoch = 0, 0, 0, 0, 0, 0
         lr = args.lr
         if args.is_map:
             index_W = tf.get_default_graph().get_tensor_by_name('input_encoding/index/dense/W:0')
@@ -209,8 +209,9 @@ def train(args, file_paths, dim):
                     train_roc = train_metrics['roc']
 
                 sess.run(tf.assign(model.n_batch, tf.constant(args.dev_batch, dtype=tf.int32)))
-                dev_loss, dev_metrics = multi_evaluate(model, dev_total // args.dev_batch, dev_eval_file, sess,
-                                                       handle, dev_handle, args.is_point)
+                dev_loss, dev_metrics, dev_hour_metrics = multi_evaluate(model, dev_total // args.dev_batch,
+                                                                         dev_eval_file, sess,
+                                                                         handle, dev_handle, args.is_point)
                 # dev_metrics = evaluate_batch(model, dev_total // args.dev_batch, dev_eval_file, sess, 'dev',
                 #                              handle, dev_handle, args.is_point, logger)
                 sess.run(tf.assign(model.is_train, tf.constant(True, dtype=tf.bool)))
@@ -246,6 +247,7 @@ def train(args, file_paths, dim):
                 sess.run(tf.assign(model.lr, tf.constant(lr, dtype=tf.float32)))
 
                 if task_sum > max_sum:
+                    max_hour = dev_hour_metrics
                     max_sum = task_sum
                     max_epoch = global_step // args.checkpoint
                     filename = os.path.join(args.model_dir, "model_{}.ckpt".format(global_step))
@@ -262,6 +264,10 @@ def train(args, file_paths, dim):
             logger.info('Max Acc - {}'.format(max_metrics[t]['max_acc']))
             logger.info('Max PSE - {}'.format(max_metrics[t]['max_pse']))
             logger.info('Max Epoch - {}'.format(max_metrics[t]['max_epoch']))
+            with open(os.path.join(args.result_dir, t + '_hour.json'), 'w') as f:
+                for hour in max_hour[t]:
+                    f.write(json.dumps(hour) + '\n')
+            f.close()
         if args.is_map:
             np.savetxt(os.path.join(args.result_dir, args.task + '_index_W.txt'), iw, fmt='%.6f', delimiter=',')
             np.savetxt(os.path.join(args.result_dir, args.task + '_medicine_W.txt'), mw, fmt='%.6f', delimiter=',')
