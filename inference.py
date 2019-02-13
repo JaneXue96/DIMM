@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow.contrib as tc
 import numpy as np
+import pandas as pd
 import warnings
 import time
 import os
@@ -24,18 +25,19 @@ data_dir = 'data/raw_data/inference'
 model_dir = 'multi_task/DIMM_final/models'
 n_index = 205
 n_medicine = 241
+batch_size = 8
+max_len = 720
 
 
 class InfModel(object):
     def __init__(self):
-        self.id = tf.placeholder(tf.int64, [None])
-        self.index = tf.placeholder(tf.float32, [2, n_index])
-        self.medicine = tf.placeholder(tf.float32, [2, n_medicine])
-        self.seq_len = tf.placeholder(tf.int64, [None])
-        self.labels = tf.placeholder(tf.int64, [None])
+        self.id = tf.placeholder(tf.int32, [None])
+        self.index = tf.placeholder(tf.float32, [batch_size, max_len, n_index])
+        self.medicine = tf.placeholder(tf.float32, [batch_size, max_len, n_medicine])
+        self.seq_len = tf.placeholder(tf.int32, [None])
+        self.labels = tf.placeholder(tf.int32, [None])
 
         self.n_hidden = 64
-        self.n_batch = 2
         self.n_layer = 2
         self.n_label = 2
         self.N = tf.shape(self.id)[0]
@@ -73,19 +75,19 @@ class InfModel(object):
 
     def _input_attention(self, input_x, input_y, n_unit, scope):
         with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
-            input_encodes = self_transformer(input_x, input_y, self.mask, 4, n_unit, 1, 1.0, False, True)
+            input_encodes = self_transformer(input_x, input_y, self.mask, 4, n_unit, 1, 1.0, True, False)
             return input_encodes
 
     def _rnn(self):
         with tf.variable_scope('rnn', reuse=tf.AUTO_REUSE):
-            self.seq_encodes, _ = cu_rnn('bi-gru', self.input_encodes, self.n_hidden, self.n_batch, False, self.n_layer)
+            self.seq_encodes, _ = cu_rnn('bi-gru', self.input_encodes, self.n_hidden, batch_size, False, self.n_layer)
         self.n_hidden *= self.n_layer
         self.seq_encodes = tf.nn.dropout(self.seq_encodes, 1.0)
 
     def _step_attention(self):
         with tf.variable_scope('step_attention', reuse=tf.AUTO_REUSE):
             self.seq_encodes = self_transformer(self.seq_encodes, self.seq_encodes, self.mask, 4, self.n_hidden,
-                                                4, 1.0, True, True)
+                                                4, 1.0, True, False)
 
     def _seq_label(self):
         with tf.variable_scope('seq_labels', reuse=tf.AUTO_REUSE):
@@ -113,89 +115,47 @@ class Inference(object):
         saver = tf.train.Saver()
         saver.restore(self.sess, tf.train.latest_checkpoint(model_dir))
 
-    def response(self, context, question):
+    def response(self, file_path):
         sess = self.sess
         model = self.model
-        span, context_idxs, ques_idxs, context_char_idxs, ques_char_idxs = \
-            self.prepro(context, question)
-        yp1, yp2 = \
-            sess.run(
-                [model.yp1, model.yp2],
-                feed_dict={
-                    model.c: context_idxs, model.q: ques_idxs,
-                    model.ch: context_char_idxs, model.qh: ques_char_idxs,
-                    model.tokens_in_context: len(span)})
-        start_idx = span[yp1[0]][0]
-        end_idx = span[yp2[0]][1]
-        return context[start_idx: end_idx]
+        ids, indexes, medicines, seq_lens, labels, names = self.prepro(file_path)
+        pre_labels, probs = sess.run([model.pre_labels, model.soft_outputs],
+                                     feed_dict={model.id: ids, model.index: indexes, model.medicine: medicines,
+                                                model.seq_len: seq_lens, model.labels: labels})
 
-    def prepro(self, context, question):
-        context = context.replace("''", '" ').replace("``", '" ')
-        context_tokens = word_tokenize(context)
-        context_chars = [list(token) for token in context_tokens]
-        spans = convert_idx(context, context_tokens)
-        ques = question.replace("''", '" ').replace("``", '" ')
-        ques_tokens = word_tokenize(ques)
-        ques_chars = [list(token) for token in ques_tokens]
+        return pre_labels, probs
 
-        context_idxs = np.zeros([1, len(context_tokens)], dtype=np.int32)
-        context_char_idxs = np.zeros(
-            [1, len(context_tokens), char_limit], dtype=np.int32)
-        ques_idxs = np.zeros([1, len(ques_tokens)], dtype=np.int32)
-        ques_char_idxs = np.zeros(
-            [1, len(ques_tokens), char_limit], dtype=np.int32)
+    def prepro(self, data_path):
+        b_ids = np.zeros(batch_size, dtype=np.int64)
+        b_index = np.zeros((batch_size, n_index), dtype=np.float32)
+        b_medicine = np.zeros((batch_size, n_medicine), dtype=np.float32)
+        b_seq_len = np.zeros(batch_size, dtype=np.int64)
+        b_labels = np.zeros(batch_size, dtype=np.int64)
+        b_names = []
+        for i, file in enumerate(os.listdir(data_path)):
+            if file.startswith('0'):
+                dead = 0
+            else:
+                dead = 1
+            raw_sample = pd.read_csv(os.path.join(data_path, file), sep=',')
+            raw_sample = raw_sample.fillna(0)
+            medicine = raw_sample.iloc[:, 209:].as_matrix()
+            index = raw_sample.iloc[:, 3:208].as_matrix()
+            b_ids[i] = i
+            b_index[i] = index
+            b_medicine[i] = medicine
+            b_seq_len[i] = index.shape[0]
+            b_labels[i] = dead
+            b_names.append(file)
 
-        def _get_word(word):
-            for each in (word, word.lower(), word.capitalize(), word.upper()):
-                if each in self.word2idx_dict:
-                    return self.word2idx_dict[each]
-            return 1
-
-        def _get_char(char):
-            if char in self.char2idx_dict:
-                return self.char2idx_dict[char]
-            return 1
-
-        for i, token in enumerate(context_tokens):
-            context_idxs[0, i] = _get_word(token)
-
-        for i, token in enumerate(ques_tokens):
-            ques_idxs[0, i] = _get_word(token)
-
-        for i, token in enumerate(context_chars):
-            for j, char in enumerate(token):
-                if j == char_limit:
-                    break
-                context_char_idxs[0, i, j] = _get_char(char)
-
-        for i, token in enumerate(ques_chars):
-            for j, char in enumerate(token):
-                if j == char_limit:
-                    break
-                ques_char_idxs[0, i, j] = _get_char(char)
-        return spans, context_idxs, ques_idxs, context_char_idxs, ques_char_idxs
+        return b_ids, b_index, b_medicine, b_seq_len, b_labels, b_names
 
 
 if __name__ == "__main__":
     infer = Inference()
-    context = "In meteorology, precipitation is any product of the condensation " \
-              "of atmospheric water vapor that falls under gravity. The main forms " \
-              "of precipitation include drizzle, rain, sleet, snow, graupel and hail." \
-              "Precipitation forms as smaller droplets coalesce via collision with other " \
-              "rain drops or ice crystals within a cloud. Short, intense periods of rain " \
-              "in scattered locations are called “showers”."
-    ques1 = "What causes precipitation to fall?"
-    ques2 = "What is another main form of precipitation besides drizzle, rain, snow, sleet and hail?"
-    ques3 = "Where do water droplets collide with ice crystals to form precipitation?"
 
-    # Correct: gravity, Output: drizzle, rain, sleet, snow, graupel and hail
-    ans1 = infer.response(context, ques1)
-    print("Answer 1: {}".format(ans1))
-
-    # Correct: graupel, Output: graupel
-    ans2 = infer.response(context, ques2)
-    print("Answer 2: {}".format(ans2))
-
-    # Correct: within a cloud, Output: within a cloud
-    ans3 = infer.response(context, ques3)
-    print("Answer 3: {}".format(ans3))
+    labels, probs = infer.response(data_dir)
+    print('Labels')
+    print(labels)
+    print('Probs')
+    print(probs)

@@ -87,7 +87,7 @@ def multi_evaluate(model, num_batches, eval_file, sess, handle, str_handle, is_p
     task_point_ref = {}
     task_point_score = {}
     hour_metrics = {}
-    weight_matrix = []
+    # weight_matrix = []
     tasks = ['4019', '41401', '25000', '5849']
     for t in tasks:
         task_metrics[t] = {'loss': 0, 'acc': 0.0, 'roc': 0.0, 'prc': 0.0, 'pse': 0.0}
@@ -98,11 +98,11 @@ def multi_evaluate(model, num_batches, eval_file, sess, handle, str_handle, is_p
         task_point_score[t] = {3 * k: [] for k in range(1, 73)}
         hour_metrics[t] = []
     for _ in range(num_batches):
-        patient_ids, weights, loss, labels, scores, seq_lens = sess.run([model.id, model.weights, model.loss,
-                                                                         model.pre_labels, model.pre_scores, model.seq_len],
-                                                                        feed_dict={handle: str_handle} if handle is not None else None)
+        patient_ids, loss, labels, scores, seq_lens = sess.run([model.id, model.loss, model.pre_labels,
+                                                                model.pre_scores, model.seq_len],
+                                                               feed_dict={handle: str_handle} if handle is not None else None)
         losses.append(loss)
-        weight_matrix.append(weights)
+        # weight_matrix.append(weights)
         for pid, pre_label, pre_score, seq_len in zip(patient_ids, labels, scores, seq_lens):
             sample = eval_file[str(pid)]
             task = sample['task']

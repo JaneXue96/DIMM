@@ -131,6 +131,10 @@ class DIMM_Model(object):
 
     def _step_attention(self):
         with tf.variable_scope('step_attention', reuse=tf.AUTO_REUSE):
+            # self.n_hidden *= 4
+            # self.seq_encodes = self_transformer(self.input_encodes, self.input_encodes, self.mask, self.block_stp,
+            #                                     self.n_hidden, self.head_stp, self.dropout_keep_prob,
+            #                                     True, self.is_train)
             self.seq_encodes = self_transformer(self.seq_encodes, self.seq_encodes, self.mask, self.block_stp,
                                                 self.n_hidden, self.head_stp, self.dropout_keep_prob,
                                                 True, self.is_train)

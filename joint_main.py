@@ -107,11 +107,11 @@ def parse_args():
                                help='the dir to store raw data')
     path_settings.add_argument('--preprocessed_dir', default='data/preprocessed_data/',
                                help='the dir to store prepared data')
-    path_settings.add_argument('--model_dir', default='models/',
+    path_settings.add_argument('--model_dir', default='joint_task_outputs/models/',
                                help='the dir to store models')
-    path_settings.add_argument('--result_dir', default='results/',
+    path_settings.add_argument('--result_dir', default='joint_task_outputs/results/',
                                help='the dir to output the results')
-    path_settings.add_argument('--summary_dir', default='summary/',
+    path_settings.add_argument('--summary_dir', default='joint_task_outputs/summary/',
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
                                help='path of the log file. If not set, logs are printed to console')

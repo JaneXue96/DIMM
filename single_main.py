@@ -4,13 +4,14 @@ import logging
 import ujson as json
 import numpy as np
 import tensorflow as tf
-from multi_preprocess import run_prepare
+from sklearn.metrics import accuracy_score
+from single_preprocess import run_prepare
 from models.bi_RNN import bi_RNN_Model
 from models.sep_RNN import sep_RNN_Model
 from models.TCN import TCN
 from models.SAnD import SAND
 from models.DIMM import DIMM_Model
-from multi_util import get_record_parser, multi_evaluate, get_batch_dataset, get_dataset, evaluate_batch
+from single_util import get_record_parser, evaluate_batch, get_batch_dataset, get_dataset
 import warnings
 
 warnings.filterwarnings(action='ignore', category=UserWarning, module='tensorflow')
@@ -34,14 +35,15 @@ def parse_args():
                         help='specify gpu device')
 
     train_settings = parser.add_argument_group('train settings')
-    # 31113 6921 [14400, 120, 480, 108, 9] [29100, 300, 970, 216, 9]
-    train_settings.add_argument('--num_steps', type=int, default=14520,
+    # 5849=[4800, 40, 160, 40, 64] 25000=[4950, 33, 165, 38, 25] 4019=[11700, 130, 390, 98, 64]
+    # 41401 = [7800, 52, 260, 40, 64] 208=[
+    train_settings.add_argument('--num_steps', type=int, default=4800,
                                 help='num of step')
-    train_settings.add_argument('--period', type=int, default=121,
+    train_settings.add_argument('--period', type=int, default=40,
                                 help='period to save batch loss')
-    train_settings.add_argument('--checkpoint', type=int, default=484,
+    train_settings.add_argument('--checkpoint', type=int, default=160,
                                 help='checkpoint for evaluation')
-    train_settings.add_argument('--eval_num_batches', type=int, default=108,
+    train_settings.add_argument('--eval_num_batches', type=int, default=40,
                                 help='num of batches for evaluation')
 
     train_settings.add_argument('--optim', default='adam',
@@ -52,13 +54,13 @@ def parse_args():
                                 help='weight decay')
     train_settings.add_argument('--dropout_keep_prob', type=float, default=0.65,
                                 help='dropout keep rate')
-    train_settings.add_argument('--train_batch', type=int, default=64,
+    train_settings.add_argument('--train_batch', type=int, default=32,
                                 help='train batch size')
-    train_settings.add_argument('--dev_batch', type=int, default=9,
+    train_settings.add_argument('--dev_batch', type=int, default=64,
                                 help='dev batch size')
     train_settings.add_argument('--epochs', type=int, default=30,
                                 help='train epochs')
-    train_settings.add_argument('--patience', type=int, default=3,
+    train_settings.add_argument('--patience', type=int, default=2,
                                 help='num of epochs for train patients')
 
     model_settings = parser.add_argument_group('model settings')
@@ -84,6 +86,12 @@ def parse_args():
                                 help='whether to predict point label')
     model_settings.add_argument('--is_fc', type=bool, default=False,
                                 help='whether to use focal loss')
+    model_settings.add_argument('--ksize', type=int, default=3,
+                                help='kernel size (default: 3)')
+    model_settings.add_argument('--levels', type=int, default=11,
+                                help='# of levels (default: 10)')
+    model_settings.add_argument('--fsize', type=int, default=256,
+                                help='number of hidden units per layer (default: 100)')
     model_settings.add_argument('--ipt_att', type=bool, default=True,
                                 help='whether to use input self attention')
     model_settings.add_argument('--intra_att', type=bool, default=True,
@@ -100,9 +108,15 @@ def parse_args():
                                 help='num of block for step attention')
     model_settings.add_argument('--head_stp', type=int, default=4,
                                 help='num of step attention head')
+    model_settings.add_argument('--atten', type=bool, default=False,
+                                help='whether to use TCN attention')
+    model_settings.add_argument('--highway', type=bool, default=False,
+                                help='whether to use highway connection')
+    model_settings.add_argument('--gated', type=bool, default=False,
+                                help='whether to use gated conv')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--task', default='multi_task',
+    path_settings.add_argument('--task', default='5849',
                                help='the task name')
     path_settings.add_argument('--model', default='DIMM',
                                help='the model name')
@@ -110,11 +124,11 @@ def parse_args():
                                help='the dir to store raw data')
     path_settings.add_argument('--preprocessed_dir', default='data/preprocessed_data/',
                                help='the dir to store prepared data')
-    path_settings.add_argument('--model_dir', default='models/',
+    path_settings.add_argument('--model_dir', default='single_task_outputs/models/',
                                help='the dir to store models')
-    path_settings.add_argument('--result_dir', default='results/',
+    path_settings.add_argument('--result_dir', default='single_task_outputs/results/',
                                help='the dir to output the results')
-    path_settings.add_argument('--summary_dir', default='summary/',
+    path_settings.add_argument('--summary_dir', default='single_task_outputs/summary/',
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
                                help='path of the log file. If not set, logs are printed to console')
@@ -140,12 +154,6 @@ def train(args, file_paths, dim):
     dev_total = dev_meta['total']
     logger.info('Total dev data {}'.format(dev_total))
     logger.info('Index dim {} Medicine dim {}'.format(dim[0], dim[1]))
-    tasks = ['4019', '41401', '25000', '5849']
-    max_metrics = {}
-    max_hour = {}
-    for t in tasks:
-        max_metrics[t] = {'max_acc': 0.0, 'max_roc': 0.0, 'max_prc': 0.0, 'max_pse': 0.0, 'max_sum': 0.0,
-                          'max_epoch': 0}
 
     parser = get_record_parser(args.max_len, dim)
     train_dataset = get_batch_dataset(file_paths.train_record_file, parser, args)
@@ -166,15 +174,16 @@ def train(args, file_paths, dim):
     sess_config.gpu_options.allow_growth = True
 
     with tf.Session(config=sess_config) as sess:
-        # writer = tf.summary.FileWriter(args.summary_dir)
+        writer = tf.summary.FileWriter(args.summary_dir)
         sess.run(tf.global_variables_initializer())
         saver = tf.train.Saver()
         train_handle = sess.run(train_iterator.string_handle())
         dev_handle = sess.run(dev_iterator.string_handle())
-        max_sum, max_epoch, task_sum = 0, 0, 0
-        train_roc = 0
-        roc_save, patience = 0, 0
-        # TODO
+        max_acc, max_roc, max_prc, max_pse, max_sum, max_epoch = 0, 0, 0, 0, 0, 0
+        train_roc, roc_save, patience = 0, 0, 0
+        max_hour = []
+        NAMES = None
+        FALSE = []
         lr = args.lr
         if args.is_map:
             index_W = tf.get_default_graph().get_tensor_by_name('input_encoding/index/dense/W:0')
@@ -189,51 +198,42 @@ def train(args, file_paths, dim):
             loss, train_op = sess.run([model.loss, model.train_op], feed_dict={handle: train_handle})
             if global_step % args.period == 0:
                 logger.info('Period point {} Loss {}'.format(global_step, loss))
-                # loss_sum = tf.Summary(value=[tf.Summary.Value(tag='model/loss', simple_value=loss), ])
-                # writer.add_summary(loss_sum, global_step)
+                loss_sum = tf.Summary(value=[tf.Summary.Value(tag='model/loss', simple_value=loss), ])
+                writer.add_summary(loss_sum, global_step)
 
             if global_step % args.checkpoint == 0:
                 logger.info('Evaluating the model for epoch {}'.format(global_step // args.checkpoint))
                 sess.run(tf.assign(model.is_train, tf.constant(False, dtype=tf.bool)))
-                train_metrics = evaluate_batch(model, args.eval_num_batches, train_eval_file, sess, 'train',
-                                               handle, train_handle, args.is_point, logger)
+                train_metrics, _, summ = evaluate_batch(model, args.eval_num_batches, train_eval_file, sess, 'train',
+                                                        handle, train_handle, args.is_point, logger)
                 logger.info('Train Metrics')
                 logger.info('Loss - {} AUROC - {} AUPRC - {} Acc - {} Pse - {}'.format(train_metrics['loss'],
                                                                                        train_metrics['roc'],
                                                                                        train_metrics['prc'],
                                                                                        train_metrics['acc'],
                                                                                        train_metrics['pse']))
-                # for s in summ:
-                #     writer.add_summary(s, global_step)
+                for s in summ:
+                    writer.add_summary(s, global_step)
                 if train_metrics['roc'] > train_roc:
                     train_roc = train_metrics['roc']
+                    NAMES = train_metrics['name']
 
                 sess.run(tf.assign(model.n_batch, tf.constant(args.dev_batch, dtype=tf.int32)))
-                dev_loss, dev_metrics, dev_hour_metrics = multi_evaluate(model, dev_total // args.dev_batch,
-                                                                         dev_eval_file, sess,
-                                                                         handle, dev_handle, args.is_point)
-                # dev_metrics = evaluate_batch(model, dev_total // args.dev_batch, dev_eval_file, sess, 'dev',
-                #                              handle, dev_handle, args.is_point, logger)
+                dev_metrics, hour_metrics, summ = evaluate_batch(model, dev_total // args.dev_batch, dev_eval_file,
+                                                                 sess, 'dev', handle, dev_handle, args.is_point, logger)
                 sess.run(tf.assign(model.is_train, tf.constant(True, dtype=tf.bool)))
-                roc = 0
-                for t in tasks:
-                    logger.info('Dev Metrics')
-                    logger.info('Task - {}'.format(t))
-                    logger.info('Loss- {} AUROC - {} AUPRC - {} Acc - {} Pse - {}'.format(dev_loss,
-                                                                                          dev_metrics[t]['roc'],
-                                                                                          train_metrics['prc'],
-                                                                                          train_metrics['acc'],
-                                                                                          train_metrics['pse']))
-                    roc += dev_metrics[t]['roc']
-                    max_metrics[t]['max_acc'] = max((dev_metrics[t]['acc'], max_metrics[t]['max_acc']))
-                    max_metrics[t]['max_roc'] = max(dev_metrics[t]['roc'], max_metrics[t]['max_roc'])
-                    max_metrics[t]['max_prc'] = max(dev_metrics[t]['prc'], max_metrics[t]['max_prc'])
-                    max_metrics[t]['max_pse'] = max(dev_metrics[t]['pse'], max_metrics[t]['max_pse'])
-                    dev_sum = dev_metrics[t]['roc'] + dev_metrics[t]['prc'] + dev_metrics[t]['pse']
-                    task_sum += dev_sum
-                    if dev_sum > max_metrics[t]['max_sum']:
-                        max_metrics[t]['max_sum'] = dev_sum
-                        max_metrics[t]['max_epoch'] = global_step // args.checkpoint
+                logger.info('Dev Metrics')
+                logger.info('Loss - {} AUCROC - {} AUCPRC - {} Acc - {} Pse - {}'.format(dev_metrics['loss'],
+                                                                                         dev_metrics['roc'],
+                                                                                         dev_metrics['prc'],
+                                                                                         dev_metrics['acc'],
+                                                                                         dev_metrics['pse']))
+                FALSE.append({'Step': global_step, 'FP': dev_metrics['fp'], 'FN': dev_metrics['fn']})
+                for s in summ:
+                    writer.add_summary(s, global_step)
+                writer.flush()
+
+                roc = dev_metrics['roc']
                 if roc > roc_save:
                     roc_save = roc
                     patience = 0
@@ -241,14 +241,23 @@ def train(args, file_paths, dim):
                     patience += 1
                 if patience >= args.patience:
                     lr /= 2.0
+                    logger.info('Learning rate reduced to {}'.format(lr))
                     roc_save = roc
                     patience = 0
-                    logger.info('Learning rate reduced to {}'.format(lr))
                 sess.run(tf.assign(model.lr, tf.constant(lr, dtype=tf.float32)))
 
-                if task_sum > max_sum:
-                    max_hour = dev_hour_metrics
-                    max_sum = task_sum
+                max_acc = max(dev_metrics['acc'], max_acc)
+                max_roc = max(dev_metrics['roc'], max_roc)
+                max_prc = max(dev_metrics['prc'], max_prc)
+                max_pse = max(dev_metrics['pse'], max_pse)
+                dev_sum = dev_metrics['roc'] + dev_metrics['prc'] + dev_metrics['pse']
+                if dev_sum > max_sum:
+                    # var_names = [v.name for v in model.all_params]
+                    # var_values = sess.run(var_names)
+                    # for k, v in zip(var_names, var_values):
+                    #     print(k, v)
+                    max_hour = hour_metrics
+                    max_sum = dev_sum
                     max_epoch = global_step // args.checkpoint
                     filename = os.path.join(args.model_dir, "model_{}.ckpt".format(global_step))
                     saver.save(sess, filename)
@@ -256,18 +265,23 @@ def train(args, file_paths, dim):
                         iw = sess.run(index_W)
                         mw = sess.run(medicine_W)
         logger.info('Max Train AUROC - {}'.format(train_roc))
-        logger.info('Max Dev epoch - {}'.format(max_epoch))
-        for t in tasks:
-            logger.info('Task - {}'.format(t))
-            logger.info('Max AUROC - {}'.format(max_metrics[t]['max_roc']))
-            logger.info('Max AUPRC - {}'.format(max_metrics[t]['max_prc']))
-            logger.info('Max Acc - {}'.format(max_metrics[t]['max_acc']))
-            logger.info('Max PSE - {}'.format(max_metrics[t]['max_pse']))
-            logger.info('Max Epoch - {}'.format(max_metrics[t]['max_epoch']))
-            with open(os.path.join(args.result_dir, t + '_hour.json'), 'w') as f:
-                for hour in max_hour[t]:
-                    f.write(json.dumps(hour) + '\n')
-            f.close()
+        logger.info('Max AUROC - {}'.format(max_roc))
+        logger.info('Max AUPRC - {}'.format(max_prc))
+        logger.info('Max Acc - {}'.format(max_acc))
+        logger.info('Max Pse - {}'.format(max_pse))
+        logger.info('Max Epoch - {}'.format(max_epoch))
+        with open(os.path.join(args.result_dir, 'Hour.json'), 'w') as f:
+            for hour in max_hour:
+                f.write(json.dumps(hour) + '\n')
+        f.close()
+        with open(os.path.join(args.result_dir, 'FALSE.json'), 'w') as f:
+            for record in FALSE:
+                f.write(json.dumps(record) + '\n')
+        f.close()
+        with open(os.path.join(args.result_dir, 'NAME.json'), 'w') as f:
+            for record in NAMES:
+                f.write(json.dumps(record) + '\n')
+        f.close()
         if args.is_map:
             np.savetxt(os.path.join(args.result_dir, args.task + '_index_W.txt'), iw, fmt='%.6f', delimiter=',')
             np.savetxt(os.path.join(args.result_dir, args.task + '_medicine_W.txt'), mw, fmt='%.6f', delimiter=',')
@@ -298,10 +312,11 @@ def run():
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     logger.info('Preparing the directories...')
-    args.preprocessed_dir = os.path.join(args.task, args.preprocessed_dir)
-    args.model_dir = os.path.join(args.task, args.model, args.model_dir)
-    args.result_dir = os.path.join(args.task, args.model, args.result_dir)
-    args.summary_dir = os.path.join(args.task, args.model, args.summary_dir)
+    args.raw_dir = args.raw_dir + args.task
+    args.preprocessed_dir = args.preprocessed_dir + args.task
+    args.model_dir = os.path.join(args.model_dir, args.task, args.model)
+    args.result_dir = os.path.join(args.result_dir, args.task, args.model)
+    args.summary_dir = os.path.join(args.summary_dir, args.task, args.model)
     for dir_path in [args.raw_dir, args.preprocessed_dir, args.model_dir, args.result_dir, args.summary_dir]:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
