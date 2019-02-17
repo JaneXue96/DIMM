@@ -50,9 +50,11 @@ def focal_loss(logits, targets, mask):
 
 
 def point_loss(logits, targets, weight=0.5):
-    loss = tf.reduce_mean(tf.nn.weighted_cross_entropy_with_logits(targets=tf.one_hot(targets, 2),
-                                                                   logits=logits,
-                                                                   pos_weight=weight))
+    # loss = tf.reduce_mean(tf.nn.weighted_cross_entropy_with_logits(targets=tf.one_hot(targets, 2),
+    #                                                                logits=logits,
+    #                                                                pos_weight=weight))
+    loss = tf.reduce_mean(tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits,
+                                                                                   labels=tf.stop_gradient(tf.one_hot(targets, 2)))))
     return loss
 
 

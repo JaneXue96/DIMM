@@ -99,19 +99,21 @@ def parse_args():
                                 help='coefficient for tasks')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--task', default='joint_task',
+    path_settings.add_argument('--task', default='joint',
                                help='the task name')
     path_settings.add_argument('--model', default='DIMM',
                                help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
-    path_settings.add_argument('--preprocessed_dir', default='data/preprocessed_data/',
+    path_settings.add_argument('--preprocessed_dir', default='data/preprocessed_data/joint_task',
                                help='the dir to store prepared data')
-    path_settings.add_argument('--model_dir', default='joint_task_outputs/models/',
+    path_settings.add_argument('--outputs_dir', default='outputs/joint_task/',
+                               help='the dir of outputs')
+    path_settings.add_argument('--model_dir', default='models/',
                                help='the dir to store models')
-    path_settings.add_argument('--result_dir', default='joint_task_outputs/results/',
+    path_settings.add_argument('--result_dir', default='results/',
                                help='the dir to output the results')
-    path_settings.add_argument('--summary_dir', default='joint_task_outputs/summary/',
+    path_settings.add_argument('--summary_dir', default='summary/',
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
                                help='path of the log file. If not set, logs are printed to console')
@@ -283,10 +285,9 @@ def run():
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     logger.info('Preparing the directories...')
-    args.preprocessed_dir = os.path.join(args.task, args.preprocessed_dir)
-    args.model_dir = os.path.join(args.task, args.model, args.model_dir)
-    args.result_dir = os.path.join(args.task, args.model, args.result_dir)
-    args.summary_dir = os.path.join(args.task, args.model, args.summary_dir)
+    args.model_dir = os.path.join(args.outputs_dir, args.task, args.model, args.model_dir)
+    args.result_dir = os.path.join(args.outputs_dir, args.task, args.model, args.result_dir)
+    args.summary_dir = os.path.join(args.outputs_dir, args.task, args.model, args.summary_dir)
     for dir_path in [args.raw_dir, args.preprocessed_dir, args.model_dir, args.result_dir, args.summary_dir]:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)

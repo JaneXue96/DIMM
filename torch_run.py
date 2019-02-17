@@ -93,15 +93,19 @@ def parse_args():
     path_settings = parser.add_argument_group('path settings')
     path_settings.add_argument('--task', default='5849',
                                help='the task name')
+    path_settings.add_argument('--model', default='TCN',
+                               help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
-    path_settings.add_argument('--preprocessed_dir', default='torch_data/preprocessed_data/',
+    path_settings.add_argument('--preprocessed_dir', default='data/preprocessed_data/torch/',
                                help='the dir to store prepared data')
-    path_settings.add_argument('--model_dir', default='torch_data/models/',
+    path_settings.add_argument('--outputs_dir', default='outputs/single_task/',
+                               help='the dir of outputs')
+    path_settings.add_argument('--model_dir', default='models/',
                                help='the dir to store models')
-    path_settings.add_argument('--result_dir', default='torch_data/results/',
+    path_settings.add_argument('--result_dir', default='results/',
                                help='the dir to output the results')
-    path_settings.add_argument('--summary_dir', default='torch_data/summary/',
+    path_settings.add_argument('--summary_dir', default='summary/',
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
                                help='path of the log file. If not set, logs are printed to console')
@@ -204,9 +208,9 @@ def run():
     logger.info('Preparing the directories...')
     args.raw_dir = args.raw_dir + args.task
     args.preprocessed_dir = args.preprocessed_dir + args.task
-    args.model_dir = args.model_dir + args.task
-    args.result_dir = args.result_dir + args.task
-    args.summary_dir = args.summary_dir + args.task
+    args.model_dir = os.path.join(args.outputs_dir, args.task, args.model, args.model_dir)
+    args.result_dir = os.path.join(args.outputs_dir, args.task, args.model, args.result_dir)
+    args.summary_dir = os.path.join(args.outputs_dir, args.task, args.model, args.summary_dir)
     for dir_path in [args.raw_dir, args.preprocessed_dir, args.model_dir, args.result_dir, args.summary_dir]:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)

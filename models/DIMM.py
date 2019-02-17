@@ -170,7 +170,11 @@ class DIMM_Model(object):
         self.all_params = tf.trainable_variables()
         self.soft_outputs = tf.stop_gradient(tf.nn.softmax(self.outputs))
         self.pre_labels = tf.argmax(self.outputs, axis=1 if self.is_point else 2)
-        self.pre_scores = self.outputs[:, :, 1]
+        # self.pre_scores = self.outputs[:, :, 1]
+        if self.is_point:
+            self.pre_scores = self.soft_outputs[:, 1]
+        else:
+            self.pre_scores = self.outputs[:, :, 1]
         self.loss = self.label_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):

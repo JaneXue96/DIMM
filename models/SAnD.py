@@ -6,37 +6,39 @@ from .attention_module import self_transformer
 
 
 class SAND(object):
-    def __init__(self, args, batch, dim, logger):
+    def __init__(self, args, batch, dim, logger, W, M):
         # logging
         self.logger = logger
         # basic config
+        self.cache_W = W
+        self.M = M
         self.n_index = dim[0]
         self.n_medicine = dim[1]
-        self.n_hidden = 2*args.n_hidden
+        self.n_hidden = 2 * args.n_hidden
         self.use_cudnn = args.use_cudnn
         self.n_batch = tf.get_variable('n_batch', shape=[], dtype=tf.int32, trainable=False)
         self.n_layer = args.n_layer
-        self.n_head = args.n_head
-        self.n_block = args.n_block
+        self.block_ipt = args.block_ipt
+        self.head_ipt = args.head_ipt
         self.n_label = args.n_class
         self.is_map = args.is_map
         self.is_att = args.ipt_att
-        self.is_bi = args.is_bi
         self.is_point = args.is_point
         self.is_fc = args.is_fc
         self.opt_type = args.optim
         self.dropout_keep_prob = args.dropout_keep_prob
         self.weight_decay = args.weight_decay
 
-        self.id, self.index, self.medicine, self.seq_len, self.org_len, self.labels = batch.get_next()
+        self.id, self.index, self.medicine, self.seq_len, self.labels = batch.get_next()
         self.N = tf.shape(self.id)[0]
         self.max_len = tf.reduce_max(self.seq_len)
         self.mask = tf.sequence_mask(self.seq_len, self.max_len, dtype=tf.float32, name='masks')
         self.index = tf.slice(self.index, [0, 0, 0], tf.stack([self.N, self.max_len, self.n_index]))
         self.medicine = tf.slice(self.medicine, [0, 0, 0], tf.stack([self.N, self.max_len, self.n_medicine]))
-        self.position = tf.multiply(tf.tile(tf.expand_dims(tf.range(start=1, limit=self.max_len + 1), 0), [self.N, 1]),
-                                    tf.cast(self.mask, dtype=tf.int32))
-        self.pos_embeddings = tf.Variable(tf.random_uniform([721, self.n_hidden], -0.05, 0.05),
+        # self.position = tf.multiply(tf.tile(tf.expand_dims(tf.range(start=1, limit=self.max_len + 1), 0), [self.N, 1]),
+        #                             tf.cast(self.mask, dtype=tf.int32))
+        self.position = tf.tile(tf.expand_dims(tf.range(start=0, limit=self.max_len), 0), [self.N, 1])
+        self.pos_embeddings = tf.Variable(tf.random_normal([720, self.n_hidden], 0.0, self.n_hidden ** -0.5),
                                           trainable=True)
         self.lr = tf.get_variable('lr', shape=[], dtype=tf.float32, trainable=False)
         self.is_train = tf.get_variable('is_train', shape=[], dtype=tf.bool, trainable=False)
@@ -59,7 +61,8 @@ class SAND(object):
     def _build_graph(self):
         start_t = time.time()
         self._embedding()
-        # self._rnn()
+        self._self_attention()
+        self._interpolation()
         if self.is_point:
             self._point_label()
         else:
@@ -75,15 +78,25 @@ class SAND(object):
                                               padding='same', kernel_initializer=self.initializer)
         with tf.variable_scope('position_embedding', reuse=tf.AUTO_REUSE):
             self.pos_emb = tf.nn.embedding_lookup(self.pos_embeddings, self.position)
-        self.input_encodes = self.input_emb + self.pos_emb
+        self.input_encodes = self.input_emb + tf.multiply(self.pos_emb,
+                                                          tf.tile(tf.expand_dims(self.mask, axis=2), [1, 1, self.n_hidden]))
 
         if self.is_train:
             self.input_encodes = tf.nn.dropout(self.input_encodes, self.dropout_keep_prob)
 
     def _self_attention(self):
         with tf.variable_scope('self_attention', reuse=tf.AUTO_REUSE):
-            self.input_encodes = self_transformer(self.input_encodes, self.input_encodes, self.mask, 4, self.n_hidden,
-                                                  8, self.dropout_keep_prob, False, self.is_train)
+            self.seq_encodes = self_transformer(self.input_encodes, self.input_encodes, self.mask, self.block_ipt,
+                                                self.n_hidden, self.head_ipt, self.dropout_keep_prob, True, self.is_train)
+
+    def _interpolation(self):
+        with tf.variable_scope('interpolation_embedding', reuse=tf.AUTO_REUSE):
+            self.S = tf.transpose(self.seq_encodes, [0, 2, 1])
+            self.indices = tf.tile(tf.expand_dims(tf.range(start=0, limit=self.max_len), 0), [self.N, 1])
+            self.W = tf.nn.embedding_lookup(self.cache_W, self.indices)
+            self.W = tf.multiply(self.W, tf.tile(tf.expand_dims(self.mask, axis=2), [1, 1, self.M]))
+            self.U = tf.matmul(self.S, self.W)
+            self.inter_emb = tf.reshape(self.U, [self.N, self.n_hidden * self.M])
 
     def _seq_label(self):
         with tf.variable_scope('seq_labels', reuse=tf.AUTO_REUSE):
@@ -104,21 +117,15 @@ class SAND(object):
 
     def _point_label(self):
         with tf.variable_scope('point_labels', reuse=tf.AUTO_REUSE):
-            # self.seq_encodes = tf.squeeze(tf.gather_nd(self.seq_encodes, tf.stack(
-            #     [tf.range(self.seq_len.shape[0])[..., tf.newaxis], self.seq_len[..., tf.newaxis]], axis=2)))
-            self.last_encodes = self.seq_encodes[:, -1, :]
-            self.label_dense_1 = tf.nn.relu(dense(self.last_encodes, hidden=int(self.n_hidden / 2), scope='dense_1',
-                                                  initializer=self.initializer))
-            if self.is_train:
-                self.label_dense_1 = tf.nn.dropout(self.label_dense_1, self.dropout_keep_prob)
-            self.outputs = dense(self.label_dense_1, hidden=self.n_label, scope='output_labels',
+            self.outputs = dense(self.inter_emb, hidden=self.n_label, scope='output_labels',
                                  initializer=self.initializer)
-
             self.label_loss = point_loss(self.outputs, self.labels)
 
     def _compute_loss(self):
         self.all_params = tf.trainable_variables()
         self.pre_labels = tf.argmax(self.outputs, axis=1 if self.is_point else 2)
+        self.soft_outputs = tf.stop_gradient(tf.nn.softmax(self.outputs))
+        self.pre_scores = self.soft_outputs[:, 1]
         self.loss = self.label_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
@@ -145,7 +152,11 @@ class SAND(object):
                 self.optimizer = tf.train.GradientDescentOptimizer(self.lr)
             else:
                 raise NotImplementedError('Unsupported optimizer: {}'.format(self.opt_type))
-            self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, self.all_params), 25)
-            self.train_op = self.optimizer.apply_gradients(zip(self.grads, self.all_params),
-                                                           global_step=self.global_step)
+            # self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, self.all_params), 25)
+            # self.train_op = self.optimizer.apply_gradients(zip(self.grads, self.all_params),
+            #                                                global_step=self.global_step)
             # self.train_op = self.optimizer.minimize(self.loss, global_step=self.global_step)
+            grads = self.optimizer.compute_gradients(self.loss)
+            gradients, variables = zip(*grads)
+            capped_grads, _ = tf.clip_by_global_norm(gradients, 25)
+            self.train_op = self.optimizer.apply_gradients(zip(capped_grads, variables), global_step=self.global_step)

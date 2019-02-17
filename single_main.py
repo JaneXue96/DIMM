@@ -64,6 +64,8 @@ def parse_args():
                                 help='num of epochs for train patients')
 
     model_settings = parser.add_argument_group('model settings')
+    model_settings.add_argument('--inter_M', type=int, default=12,
+                                help='dense interpolation factor')
     model_settings.add_argument('--n_class', type=int, default=2,
                                 help='class size (default: 2)')
     model_settings.add_argument('--max_len', type=int, default=720,
@@ -100,7 +102,7 @@ def parse_args():
                                 help='whether to use cross attention')
     model_settings.add_argument('--block_ipt', type=int, default=4,
                                 help='num of block for input attention')
-    model_settings.add_argument('--head_ipt', type=int, default=1,
+    model_settings.add_argument('--head_ipt', type=int, default=2,
                                 help='num of input attention head')
     model_settings.add_argument('--step_att', type=bool, default=True,
                                 help='whether to use input step attention')
@@ -122,13 +124,15 @@ def parse_args():
                                help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
-    path_settings.add_argument('--preprocessed_dir', default='data/preprocessed_data/',
+    path_settings.add_argument('--preprocessed_dir', default='data/preprocessed_data/single_task/',
                                help='the dir to store prepared data')
-    path_settings.add_argument('--model_dir', default='single_task_outputs/models/',
+    path_settings.add_argument('--outputs_dir', default='outputs/single_task/',
+                               help='the dir of outputs')
+    path_settings.add_argument('--model_dir', default='models/',
                                help='the dir to store models')
-    path_settings.add_argument('--result_dir', default='single_task_outputs/results/',
+    path_settings.add_argument('--result_dir', default='results/',
                                help='the dir to output the results')
-    path_settings.add_argument('--summary_dir', default='single_task_outputs/summary/',
+    path_settings.add_argument('--summary_dir', default='summary/',
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
                                help='path of the log file. If not set, logs are printed to console')
@@ -167,7 +171,15 @@ def train(args, file_paths, dim):
     model = DIMM_Model(args, iterator, dim, logger)
     # model = sep_RNN_Model(args, iterator, dim, logger)
     # model = TCN(args, iterator, dim, logger)
-    # model = SAND(args, iterator, dim, logger)
+
+    T = args.max_len
+    M = args.inter_M
+    W = np.zeros((T, M), dtype=np.float32)
+    for t in range(1, T + 1):
+        s = M * t / T
+        for m in range(1, M + 1):
+            W[t - 1, m - 1] = (1 - abs(s - m) / M) ** 2
+    # model = SAND(args, iterator, dim, logger, W, M)
     sess_config = tf.ConfigProto(intra_op_parallelism_threads=8,
                                  inter_op_parallelism_threads=8,
                                  allow_soft_placement=True)
@@ -216,7 +228,7 @@ def train(args, file_paths, dim):
                     writer.add_summary(s, global_step)
                 if train_metrics['roc'] > train_roc:
                     train_roc = train_metrics['roc']
-                    NAMES = train_metrics['name']
+                    # NAMES = train_metrics['name']
 
                 sess.run(tf.assign(model.n_batch, tf.constant(args.dev_batch, dtype=tf.int32)))
                 dev_metrics, hour_metrics, summ = evaluate_batch(model, dev_total // args.dev_batch, dev_eval_file,
@@ -228,7 +240,7 @@ def train(args, file_paths, dim):
                                                                                          dev_metrics['prc'],
                                                                                          dev_metrics['acc'],
                                                                                          dev_metrics['pse']))
-                FALSE.append({'Step': global_step, 'FP': dev_metrics['fp'], 'FN': dev_metrics['fn']})
+                # FALSE.append({'Step': global_step, 'FP': dev_metrics['fp'], 'FN': dev_metrics['fn']})
                 for s in summ:
                     writer.add_summary(s, global_step)
                 writer.flush()
@@ -278,10 +290,10 @@ def train(args, file_paths, dim):
             for record in FALSE:
                 f.write(json.dumps(record) + '\n')
         f.close()
-        with open(os.path.join(args.result_dir, 'NAME.json'), 'w') as f:
-            for record in NAMES:
-                f.write(json.dumps(record) + '\n')
-        f.close()
+        # with open(os.path.join(args.result_dir, 'NAME.json'), 'w') as f:
+        #     for record in NAMES:
+        #         f.write(json.dumps(record) + '\n')
+        # f.close()
         if args.is_map:
             np.savetxt(os.path.join(args.result_dir, args.task + '_index_W.txt'), iw, fmt='%.6f', delimiter=',')
             np.savetxt(os.path.join(args.result_dir, args.task + '_medicine_W.txt'), mw, fmt='%.6f', delimiter=',')
@@ -314,9 +326,9 @@ def run():
     logger.info('Preparing the directories...')
     args.raw_dir = args.raw_dir + args.task
     args.preprocessed_dir = args.preprocessed_dir + args.task
-    args.model_dir = os.path.join(args.model_dir, args.task, args.model)
-    args.result_dir = os.path.join(args.result_dir, args.task, args.model)
-    args.summary_dir = os.path.join(args.summary_dir, args.task, args.model)
+    args.model_dir = os.path.join(args.outputs_dir, args.task, args.model, args.model_dir)
+    args.result_dir = os.path.join(args.outputs_dir, args.task, args.model, args.result_dir)
+    args.summary_dir = os.path.join(args.outputs_dir, args.task, args.model, args.summary_dir)
     for dir_path in [args.raw_dir, args.preprocessed_dir, args.model_dir, args.result_dir, args.summary_dir]:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
