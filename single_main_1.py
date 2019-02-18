@@ -48,11 +48,11 @@ def parse_args():
 
     train_settings.add_argument('--optim', default='adam',
                                 help='optimizer type')
-    train_settings.add_argument('--lr', type=float, default=0.001,
+    train_settings.add_argument('--lr', type=float, default=0.0001,
                                 help='learning rate')
-    train_settings.add_argument('--weight_decay', type=float, default=0.0002,
+    train_settings.add_argument('--weight_decay', type=float, default=0.002,
                                 help='weight decay')
-    train_settings.add_argument('--dropout_keep_prob', type=float, default=0.65,
+    train_settings.add_argument('--dropout_keep_prob', type=float, default=0.7,
                                 help='dropout keep rate')
     train_settings.add_argument('--train_batch', type=int, default=32,
                                 help='train batch size')
@@ -64,13 +64,13 @@ def parse_args():
                                 help='num of epochs for train patients')
 
     model_settings = parser.add_argument_group('model settings')
-    model_settings.add_argument('--inter_M', type=int, default=12,
+    model_settings.add_argument('--inter_M', type=int, default=64,
                                 help='dense interpolation factor')
     model_settings.add_argument('--n_class', type=int, default=2,
                                 help='class size (default: 2)')
     model_settings.add_argument('--max_len', type=int, default=720,
                                 help='max length of sequence')
-    model_settings.add_argument('--n_hidden', type=int, default=128,
+    model_settings.add_argument('--n_hidden', type=int, default=256,
                                 help='size of LSTM hidden units')
     model_settings.add_argument('--use_cudnn', type=bool, default=True,
                                 help='whether to use cudnn rnn')
@@ -80,11 +80,11 @@ def parse_args():
                                 help='Number of threads in input pipeline')
     model_settings.add_argument('--capacity', type=int, default=20000,
                                 help='Batch size of data set shuffle')
-    model_settings.add_argument('--is_map', type=bool, default=True,
+    model_settings.add_argument('--is_map', type=bool, default=False,
                                 help='whether to encoding input')
     model_settings.add_argument('--is_bi', type=bool, default=True,
                                 help='whether to use bi-rnn')
-    model_settings.add_argument('--is_point', type=bool, default=False,
+    model_settings.add_argument('--is_point', type=bool, default=True,
                                 help='whether to predict point label')
     model_settings.add_argument('--is_fc', type=bool, default=False,
                                 help='whether to use focal loss')
@@ -102,7 +102,7 @@ def parse_args():
                                 help='whether to use cross attention')
     model_settings.add_argument('--block_ipt', type=int, default=4,
                                 help='num of block for input attention')
-    model_settings.add_argument('--head_ipt', type=int, default=2,
+    model_settings.add_argument('--head_ipt', type=int, default=8,
                                 help='num of input attention head')
     model_settings.add_argument('--step_att', type=bool, default=True,
                                 help='whether to use input step attention')
@@ -120,7 +120,7 @@ def parse_args():
     path_settings = parser.add_argument_group('path settings')
     path_settings.add_argument('--task', default='5849',
                                help='the task name')
-    path_settings.add_argument('--model', default='DIMM',
+    path_settings.add_argument('--model', default='SAND',
                                help='the model name')
     path_settings.add_argument('--raw_dir', default='data/raw_data/',
                                help='the dir to store raw data')
@@ -167,22 +167,19 @@ def train(args, file_paths, dim):
     train_iterator = train_dataset.make_one_shot_iterator()
     dev_iterator = dev_dataset.make_one_shot_iterator()
     logger.info('Initialize the model...')
-    if args.model == 'DIMM':
-        model = DIMM_Model(args, iterator, dim, logger)
-    elif args.model == 'BIGRU':
-        model = bi_RNN_Model(args, iterator, dim, logger)
-    elif args.model == 'SAND':
-        T = args.max_len
-        M = args.inter_M
-        W = np.zeros((T, M), dtype=np.float32)
-        for t in range(1, T + 1):
-            s = M * t / T
-            for m in range(1, M + 1):
-                W[t - 1, m - 1] = (1 - abs(s - m) / M) ** 2
-        model = SAND(args, iterator, dim, logger, W, M)
+    # model = bi_RNN_Model(args, iterator, dim, logger)
+    # model = DIMM_Model(args, iterator, dim, logger)
     # model = sep_RNN_Model(args, iterator, dim, logger)
     # model = TCN(args, iterator, dim, logger)
 
+    T = args.max_len
+    M = args.inter_M
+    W = np.zeros((T, M), dtype=np.float32)
+    for t in range(1, T + 1):
+        s = M * t / T
+        for m in range(1, M + 1):
+            W[t - 1, m - 1] = (1 - abs(s - m) / M) ** 2
+    model = SAND(args, iterator, dim, logger, W, M)
     sess_config = tf.ConfigProto(intra_op_parallelism_threads=8,
                                  inter_op_parallelism_threads=8,
                                  allow_soft_placement=True)

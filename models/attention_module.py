@@ -29,6 +29,7 @@ class EncoderStack(tf.layers.Layer):
         super(EncoderStack, self).__init__()
         self.layers = []
         self.is_ff = is_ff
+        keep_prob = 1 - keep_prob
         for _ in range(n_block):
             # Create sublayers for each layer.
             # self_attention_layer = SelfAttention(n_hidden, n_head, keep_prob, is_train)
