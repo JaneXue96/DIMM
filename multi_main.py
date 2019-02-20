@@ -157,8 +157,10 @@ def train(args, file_paths, dim):
     train_iterator = train_dataset.make_one_shot_iterator()
     dev_iterator = dev_dataset.make_one_shot_iterator()
     logger.info('Initialize the model...')
-    # model = bi_RNN_Model(args, iterator, dim, logger)
-    model = DIMM_Model(args, iterator, dim, logger)
+    if args.model == 'DIMM':
+        model = DIMM_Model(args, iterator, dim, logger)
+    elif args.model == 'BIGRU':
+        model = bi_RNN_Model(args, iterator, dim, logger)
     # model = sep_RNN_Model(args, iterator, dim, logger)
     # model = TCN(args, iterator, dim, logger)
     # model = SAND(args, iterator, dim, logger)

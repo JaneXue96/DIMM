@@ -37,11 +37,11 @@ def parse_args():
     train_settings = parser.add_argument_group('train settings')
     # 5849=[4800, 40, 160, 40, 64] 25000=[4950, 33, 165, 38, 25] 4019=[11700, 130, 390, 98, 64]
     # 41401 = [7800, 52, 260, 40, 64] 208=[
-    train_settings.add_argument('--num_steps', type=int, default=4800,
+    train_settings.add_argument('--num_steps', type=int, default=7800,
                                 help='num of step')
-    train_settings.add_argument('--period', type=int, default=40,
+    train_settings.add_argument('--period', type=int, default=52,
                                 help='period to save batch loss')
-    train_settings.add_argument('--checkpoint', type=int, default=160,
+    train_settings.add_argument('--checkpoint', type=int, default=260,
                                 help='checkpoint for evaluation')
     train_settings.add_argument('--eval_num_batches', type=int, default=40,
                                 help='num of batches for evaluation')
@@ -102,11 +102,11 @@ def parse_args():
                                 help='whether to use cross attention')
     model_settings.add_argument('--block_ipt', type=int, default=4,
                                 help='num of block for input attention')
-    model_settings.add_argument('--head_ipt', type=int, default=2,
+    model_settings.add_argument('--head_ipt', type=int, default=1,
                                 help='num of input attention head')
     model_settings.add_argument('--step_att', type=bool, default=True,
                                 help='whether to use input step attention')
-    model_settings.add_argument('--block_stp', type=int, default=4,
+    model_settings.add_argument('--block_stp', type=int, default=2,
                                 help='num of block for step attention')
     model_settings.add_argument('--head_stp', type=int, default=4,
                                 help='num of step attention head')
@@ -118,7 +118,7 @@ def parse_args():
                                 help='whether to use gated conv')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--task', default='5849',
+    path_settings.add_argument('--task', default='41401',
                                help='the task name')
     path_settings.add_argument('--model', default='DIMM',
                                help='the model name')
@@ -231,7 +231,7 @@ def train(args, file_paths, dim):
                     writer.add_summary(s, global_step)
                 if train_metrics['roc'] > train_roc:
                     train_roc = train_metrics['roc']
-                    # NAMES = train_metrics['name']
+                    NAMES = train_metrics['name']
 
                 sess.run(tf.assign(model.n_batch, tf.constant(args.dev_batch, dtype=tf.int32)))
                 dev_metrics, hour_metrics, summ = evaluate_batch(model, dev_total // args.dev_batch, dev_eval_file,
@@ -243,7 +243,7 @@ def train(args, file_paths, dim):
                                                                                          dev_metrics['prc'],
                                                                                          dev_metrics['acc'],
                                                                                          dev_metrics['pse']))
-                # FALSE.append({'Step': global_step, 'FP': dev_metrics['fp'], 'FN': dev_metrics['fn']})
+                FALSE.append({'Step': global_step, 'FP': dev_metrics['fp'], 'FN': dev_metrics['fn']})
                 for s in summ:
                     writer.add_summary(s, global_step)
                 writer.flush()
@@ -293,10 +293,10 @@ def train(args, file_paths, dim):
             for record in FALSE:
                 f.write(json.dumps(record) + '\n')
         f.close()
-        # with open(os.path.join(args.result_dir, 'NAME.json'), 'w') as f:
-        #     for record in NAMES:
-        #         f.write(json.dumps(record) + '\n')
-        # f.close()
+        with open(os.path.join(args.result_dir, 'NAME.json'), 'w') as f:
+            for record in NAMES:
+                f.write(json.dumps(record) + '\n')
+        f.close()
         if args.is_map:
             np.savetxt(os.path.join(args.result_dir, args.task + '_index_W.txt'), iw, fmt='%.6f', delimiter=',')
             np.savetxt(os.path.join(args.result_dir, args.task + '_medicine_W.txt'), mw, fmt='%.6f', delimiter=',')

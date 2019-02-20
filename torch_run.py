@@ -83,7 +83,7 @@ def parse_args():
                                 help='attention head size (default: 2)')
     model_settings.add_argument('--n_kernel', type=int, default=3,
                                 help='kernel size (default: 3)')
-    model_settings.add_argument('--n_level', type=int, default=8,
+    model_settings.add_argument('--n_level', type=int, default=4,
                                 help='# of levels (default: 10)')
     model_settings.add_argument('--n_filter', type=int, default=256,
                                 help='number of hidden units per layer (default: 256)')
@@ -117,8 +117,8 @@ def train(args, file_paths):
     logger.info('Loading data sets...')
     train_set = MyDataset(file_paths.train_file)
     test_set = MyDataset(file_paths.test_file)
-    train_loader = DataLoader(train_set, batch_size=args.batch_train, shuffle=True, num_workers=6, collate_fn=PadCollate())
-    test_loader = DataLoader(test_set, batch_size=args.batch_eval, num_workers=6, collate_fn=PadCollate())
+    train_loader = DataLoader(train_set, batch_size=args.batch_train, shuffle=True, num_workers=8, collate_fn=PadCollate())
+    test_loader = DataLoader(test_set, batch_size=args.batch_eval, num_workers=8, collate_fn=PadCollate())
     # logger.info('Loading meta...')
     # with open(file_paths.meta, 'rb') as fh:
     #     meta = pkl.load(fh)
@@ -156,7 +156,7 @@ def train(args, file_paths):
         logger.info('Dev AUPRC: {}'.format(eval_metrics['prc']))
         logger.info('Dev PSe: {}'.format(eval_metrics['pse']))
         FALSE.append({'Epoch': ep, 'FP': eval_metrics['fp'], 'FN': eval_metrics['fn']})
-        max_acc = max((eval_metrics['acc'], max_acc))
+        max_acc = max(eval_metrics['acc'], max_acc)
         max_roc = max(eval_metrics['roc'], max_roc)
         max_prc = max(eval_metrics['prc'], max_prc)
         max_pse = max(eval_metrics['pse'], max_pse)
@@ -166,9 +166,9 @@ def train(args, file_paths):
             max_epoch = ep
         scheduler.step(metrics=eval_metrics['roc'])
 
-    logger.info('Max Acc {}'.format(max_acc))
     logger.info('Max AUROC {}'.format(max_roc))
     logger.info('Max AUPRC {}'.format(max_prc))
+    logger.info('Max Acc {}'.format(max_acc))
     logger.info('Max PSE {}'.format(max_pse))
     logger.info('Max Epoch {}'.format(max_epoch))
     with open(os.path.join(args.result_dir, 'FALSE.json'), 'w') as f:

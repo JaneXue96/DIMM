@@ -174,7 +174,7 @@ class DIMM_Model(object):
         if self.is_point:
             self.pre_scores = self.soft_outputs[:, 1]
         else:
-            self.pre_scores = self.outputs[:, :, 1]
+            self.pre_scores = self.soft_outputs[:, :, 1]
         self.loss = self.label_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):

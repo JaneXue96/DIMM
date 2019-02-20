@@ -189,7 +189,8 @@ def evaluate_one_epoch(model, loader, device, data_type, is_point, logger):
         # loss = criterion(outputs.view(-1, 2), labels.view(-1)).item()
         losses.append(loss)
         output_labels = torch.max(outputs.cpu(), 2)[1].numpy()
-        output_scores = outputs.cpu()[:, :, 1].numpy()
+        output_scores = functional.softmax(outputs).cpu()[:, :, 1].numpy()
+        # output_scores = outputs.cpu()[:, :, 1].numpy()
         labels = labels.cpu().numpy()
         seq_lens = seq_lens.cpu().numpy()
 

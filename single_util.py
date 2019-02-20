@@ -72,18 +72,18 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
                 pre_labels += pre_label[:seq_len].tolist()
                 pre_scores += pre_score[:seq_len].tolist()
                 final_pre_label = pre_label[seq_len - 1]
-            # if data_type == 'dev':
-            #     if sample['label'] == 1 and final_pre_label == 0:
-            #         fp.append(sample['name'])
-            #     if sample['label'] == 0 and final_pre_label == 1:
-            #         fn.append(sample['name'])
-            #     for k, v in pre_points.items():
-            #         if seq_len >= k:
-            #             v.append(pre_label[k - 1])
-            #             score_points[k].append(pre_score[k - 1])
-            #             ref_points[k].append(sample['label'])
-            # else:
-            #     names.append(sample['name'])
+            if data_type == 'dev':
+                if sample['label'] == 1 and final_pre_label == 0:
+                    fp.append(sample['name'])
+                if sample['label'] == 0 and final_pre_label == 1:
+                    fn.append(sample['name'])
+                for k, v in pre_points.items():
+                    if seq_len >= k:
+                        v.append(pre_label[k - 1])
+                        score_points[k].append(pre_score[k - 1])
+                        ref_points[k].append(sample['label'])
+            else:
+                names.append(sample['name'])
             # ref_score = sample['score']
             # mses.append(mean_squared_error(sample['score'][:seq_len], pre_score[:seq_len]))
 
@@ -93,14 +93,14 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
     (precisions, recalls, thresholds) = precision_recall_curve(ref_labels, pre_scores)
     metrics['prc'] = auc(recalls, precisions)
     metrics['pse'] = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
-    # if data_type == 'dev':
-    #     metrics['fp'] = fp
-    #     metrics['fn'] = fn
-    #     for k, v in pre_points.items():
-    #         # logger.info('{} hour confusion matrix. AUCROC : {}'.format(int(k / 3), roc_auc_score(ref_points[k], v)))
-    #         hour_metrics.append(cal_metrics(ref_points[k], score_points[k], v))
-    # else:
-    #     metrics['name'] = names
+    if data_type == 'dev':
+        metrics['fp'] = fp
+        metrics['fn'] = fn
+        for k, v in pre_points.items():
+            # logger.info('{} hour confusion matrix. AUCROC : {}'.format(int(k / 3), roc_auc_score(ref_points[k], v)))
+            hour_metrics.append(cal_metrics(ref_points[k], score_points[k], v))
+    else:
+        metrics['name'] = names
     logger.info('Full confusion matrix')
     logger.info(confusion_matrix(ref_labels, pre_labels))
     # tn, fp, fn, tp = confusion_matrix(auc_ref, auc_pre).ravel()
