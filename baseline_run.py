@@ -171,13 +171,22 @@ def compute_score(X_train, X_test, Y_train, Y_test, logger):
     return mse
 
 
-def cal_metrics(y_true, y_pred):
+def cal_metrics(y_true, y_pred, y_score):
+    acc = accuracy_score(y_true, y_pred)
+    roc = roc_auc_score(y_true, y_score)
+    (precisions, recalls, thresholds) = precision_recall_curve(y_true, y_score)
+    prc = auc(recalls, precisions)
+    pse = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
+    return [acc, roc, prc, pse]
+
+
+def cal_metric(y_true, y_pred):
     acc = accuracy_score(y_true, y_pred)
     roc = roc_auc_score(y_true, y_pred)
     (precisions, recalls, thresholds) = precision_recall_curve(y_true, y_pred)
     prc = auc(recalls, precisions)
     pse = np.max([min(x, y) for (x, y) in zip(precisions, recalls)])
-    return [acc, roc, prc, pse]
+    return [roc, prc, acc, pse]
 
 
 def compute_label(X_train, X_test, Y_train, Y_test, logger, path, task):
@@ -185,21 +194,21 @@ def compute_label(X_train, X_test, Y_train, Y_test, logger, path, task):
     if task == '5849' or '25000':
         job = 8
     else:
-        job = 4
+        job = 6
     metrics = []
     lr = LogisticRegression()
     lr.fit(X_train, Y_train)
     Y_pred = lr.predict(X_test)
-    Y_score = lr.predict_proba(X_test)
-    lr_me = cal_metrics(Y_test, Y_pred)
+    Y_score = lr.predict_proba(X_test)[:, 1]
+    lr_me = cal_metrics(Y_test, Y_pred, Y_score)
     metrics.append(lr_me)
     logger.info('LR - {}'.format(lr_me))
-    del lr, Y_pred
+    del lr, Y_pred, Y_score
 
     svm = LinearSVC()
     svm.fit(X_train, Y_train)
     Y_pred = svm.predict(X_test)
-    svm_me = cal_metrics(Y_test, Y_pred)
+    svm_me = cal_metric(Y_test, Y_pred)
     metrics.append(svm_me)
     logger.info('SVM - {}'.format(svm_me))
     del svm, Y_pred
@@ -207,26 +216,28 @@ def compute_label(X_train, X_test, Y_train, Y_test, logger, path, task):
     rf = RandomForestClassifier(n_jobs=job)
     rf.fit(X_train, Y_train)
     Y_pred = rf.predict(X_test)
-    rf_me = cal_metrics(Y_test, Y_pred)
+    Y_score = rf.predict_proba(X_test)[:, 1]
+    rf_me = cal_metrics(Y_test, Y_pred, Y_score)
     metrics.append(rf_me)
     logger.info('RF - {}'.format(rf_me))
-    del rf, Y_pred
+    del rf, Y_pred, Y_score
 
     gbdt = GradientBoostingClassifier()
     gbdt.fit(X_train, Y_train)
     Y_pred = gbdt.predict(X_test)
-    gbdt_acc = accuracy_score(Y_test, Y_pred)
-    gbdt_auc = roc_auc_score(Y_test, Y_pred)
-    logger.info('GradientBoosting - ACC {} AUC {}'.format(gbdt_acc, gbdt_auc))
-    del gbdt, Y_pred
+    Y_score = gbdt.predict_proba(X_test)[:, 1]
+    gb_me = cal_metrics(Y_test, Y_pred, Y_score)
+    logger.info('GradientBoosting - {}'.format(gb_me))
+    del gbdt, Y_pred, Y_score
 
     xgbGBDT = XGBClassifier(n_jobs=job)
     xgbGBDT.fit(X_train, Y_train)
     Y_pred = xgbGBDT.predict(X_test)
-    xgb_me = cal_metrics(Y_test, Y_pred)
+    Y_score = xgbGBDT.predict_proba(X_test)[:, 1]
+    xgb_me = cal_metrics(Y_test, Y_pred, Y_score)
     metrics.append(xgb_me)
     logger.info('XGBOOST - {}'.format(xgb_me))
-    del xgbGBDT, Y_pred
+    del xgbGBDT, Y_pred, Y_score
 
     metrics = np.asarray(metrics, dtype=np.float32)
     path = os.path.join(path, task, 'results.txt')

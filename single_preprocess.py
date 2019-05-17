@@ -74,8 +74,8 @@ def divide_data(train_data, test_data):
             dead = 1
         raw_sample = pd.read_csv(os.path.join(train_data, file), sep=',')
         raw_sample = raw_sample.fillna(0)
-        medicine = raw_sample.iloc[:, 209:].as_matrix()
-        index = raw_sample.iloc[:, 3:208].as_matrix()
+        medicine = np.delete(raw_sample.iloc[:, 209:].as_matrix(), -1, axis=0)
+        index = np.delete(raw_sample.iloc[:, 3:208].as_matrix(), 0, axis=0)
         length = index.shape[0]
         if length > max_len:
             max_len = length

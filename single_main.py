@@ -37,11 +37,11 @@ def parse_args():
     train_settings = parser.add_argument_group('train settings')
     # 5849=[4800, 40, 160, 40, 64] 25000=[4950, 33, 165, 38, 25] 4019=[11700, 130, 390, 98, 64]
     # 41401 = [7800, 52, 260, 40, 64] 208=[
-    train_settings.add_argument('--num_steps', type=int, default=7800,
+    train_settings.add_argument('--num_steps', type=int, default=4800,
                                 help='num of step')
-    train_settings.add_argument('--period', type=int, default=52,
+    train_settings.add_argument('--period', type=int, default=40,
                                 help='period to save batch loss')
-    train_settings.add_argument('--checkpoint', type=int, default=260,
+    train_settings.add_argument('--checkpoint', type=int, default=160,
                                 help='checkpoint for evaluation')
     train_settings.add_argument('--eval_num_batches', type=int, default=40,
                                 help='num of batches for evaluation')
@@ -106,7 +106,7 @@ def parse_args():
                                 help='num of input attention head')
     model_settings.add_argument('--step_att', type=bool, default=True,
                                 help='whether to use input step attention')
-    model_settings.add_argument('--block_stp', type=int, default=2,
+    model_settings.add_argument('--block_stp', type=int, default=4,
                                 help='num of block for step attention')
     model_settings.add_argument('--head_stp', type=int, default=4,
                                 help='num of step attention head')
@@ -118,7 +118,7 @@ def parse_args():
                                 help='whether to use gated conv')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--task', default='41401',
+    path_settings.add_argument('--task', default='5849',
                                help='the task name')
     path_settings.add_argument('--model', default='DIMM',
                                help='the model name')
@@ -139,7 +139,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def train(args, file_paths, dim):
+def train(args, file_paths, shape_meta):
     logger = logging.getLogger('Medical')
     logger.info('Loading train eval file...')
     with open(file_paths.train_eval_file, "r") as fh:
@@ -156,10 +156,12 @@ def train(args, file_paths, dim):
     train_total = train_meta['total']
     logger.info('Total train data {}'.format(train_total))
     dev_total = dev_meta['total']
+    dim = shape_meta['dim']
+    max_len = args.max_len
     logger.info('Total dev data {}'.format(dev_total))
     logger.info('Index dim {} Medicine dim {}'.format(dim[0], dim[1]))
 
-    parser = get_record_parser(args.max_len, dim)
+    parser = get_record_parser(max_len, dim)
     train_dataset = get_batch_dataset(file_paths.train_record_file, parser, args)
     dev_dataset = get_dataset(file_paths.dev_record_file, parser, args)
     handle = tf.placeholder(tf.string, shape=[])
@@ -172,7 +174,7 @@ def train(args, file_paths, dim):
     elif args.model == 'BIGRU':
         model = bi_RNN_Model(args, iterator, dim, logger)
     elif args.model == 'SAND':
-        T = args.max_len
+        T = max_len
         M = args.inter_M
         W = np.zeros((T, M), dtype=np.float32)
         for t in range(1, T + 1):
@@ -362,7 +364,7 @@ def run():
         with open(file_paths.shape_meta, 'r') as fh:
             shape_meta = json.load(fh)
         fh.close()
-        train(args, file_paths, shape_meta['dim'])
+        train(args, file_paths, shape_meta)
 
 
 if __name__ == '__main__':

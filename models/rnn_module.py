@@ -1,11 +1,12 @@
 import tensorflow as tf
 import tensorflow.contrib as tc
-from tensorflow.contrib.cudnn_rnn.python.layers import cudnn_rnn
+# from tensorflow.contrib.cudnn_rnn.python.layers import cudnn_rnn
+# from tensorflow.contrib import cudnn_rnn
 
 
 def cu_rnn(rnn_type, inputs, hidden_size, batch_size, training, layer_num=1):
     if not rnn_type.startswith('bi'):
-        cell = get_cu_cell(rnn_type, hidden_size, layer_num, cudnn_rnn.CUDNN_RNN_UNIDIRECTION)
+        cell = get_cu_cell(rnn_type, hidden_size, layer_num, 'unidirectional')
         inputs = tf.transpose(inputs, [1, 0, 2])
         c = tf.zeros([layer_num, batch_size, hidden_size], tf.float32)
         h = tf.zeros([layer_num, batch_size, hidden_size], tf.float32)
@@ -14,7 +15,7 @@ def cu_rnn(rnn_type, inputs, hidden_size, batch_size, training, layer_num=1):
             c, h = state
             state = h
     else:
-        cell = get_cu_cell(rnn_type, hidden_size, layer_num, cudnn_rnn.CUDNN_RNN_BIDIRECTION)
+        cell = get_cu_cell(rnn_type, hidden_size, layer_num, 'bidirectional')
         inputs = tf.transpose(inputs, [1, 0, 2])
         outputs, state = cell(inputs)
         # if concat:
@@ -25,16 +26,16 @@ def cu_rnn(rnn_type, inputs, hidden_size, batch_size, training, layer_num=1):
     return outputs, state
 
 
-def get_cu_cell(rnn_type, hidden_size, layer_num=1, direction=cudnn_rnn.CUDNN_RNN_UNIDIRECTION):
+def get_cu_cell(rnn_type, hidden_size, layer_num=1, direction='bidirectional'):
     if rnn_type.endswith('lstm'):
-        cudnn_cell = cudnn_rnn.CudnnLSTM(num_layers=layer_num, num_units=hidden_size, direction=direction,
-                                         dropout=0)
-    elif rnn_type.endswith('gru'):
-        cudnn_cell = cudnn_rnn.CudnnGRU(num_layers=layer_num, num_units=hidden_size, direction=direction,
-                                        dropout=0)
-    elif rnn_type.endswith('rnn'):
-        cudnn_cell = cudnn_rnn.CudnnRNNTanh(num_layers=layer_num, num_units=hidden_size, direction=direction,
+        cudnn_cell = tc.cudnn_rnn.CudnnLSTM(num_layers=layer_num, num_units=hidden_size, direction=direction,
                                             dropout=0)
+    elif rnn_type.endswith('gru'):
+        cudnn_cell = tc.cudnn_rnn.CudnnGRU(num_layers=layer_num, num_units=hidden_size, direction=direction,
+                                           dropout=0)
+    elif rnn_type.endswith('rnn'):
+        cudnn_cell = tc.cudnn_rnn.CudnnRNNTanh(num_layers=layer_num, num_units=hidden_size, direction=direction,
+                                               dropout=0)
     else:
         raise NotImplementedError('Unsuported rnn type: {}'.format(rnn_type))
     return cudnn_cell

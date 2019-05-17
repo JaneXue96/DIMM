@@ -9,8 +9,8 @@ _NEG_INF = -1e9
 def self_transformer(embedded_x, embedded_y, inputs_padding, n_block, n_hidden, n_head, keep_prob, is_ff, is_train):
     attention_bias = get_padding_bias(inputs_padding)
     if is_train:
-        embedded_x = tf.nn.dropout(embedded_x, keep_prob)
-        embedded_y = tf.nn.dropout(embedded_y, keep_prob)
+        embedded_x = tf.nn.dropout(embedded_x, rate=1 - keep_prob)
+        embedded_y = tf.nn.dropout(embedded_y, rate=1 - keep_prob)
     encoder_stack = EncoderStack(n_block, n_hidden, n_head, keep_prob, is_train, is_ff)
     encoder_outputs = encoder_stack(embedded_x, embedded_y, attention_bias, inputs_padding)
     return encoder_outputs
@@ -29,18 +29,18 @@ class EncoderStack(tf.layers.Layer):
         super(EncoderStack, self).__init__()
         self.layers = []
         self.is_ff = is_ff
-        keep_prob = 1 - keep_prob
+        dropout = 1 - keep_prob
         for _ in range(n_block):
             # Create sublayers for each layer.
             # self_attention_layer = SelfAttention(n_hidden, n_head, keep_prob, is_train)
-            self_attention_layer = Attention(n_hidden, n_head, keep_prob, is_train)
+            self_attention_layer = Attention(n_hidden, n_head, dropout, is_train)
             if self.is_ff:
-                feed_forward_network = FeedFowardNetwork(n_hidden, 2 * n_hidden, keep_prob, is_train, is_ffn_pad)
+                feed_forward_network = FeedFowardNetwork(n_hidden, 2 * n_hidden, dropout, is_train, is_ffn_pad)
 
             self.layers.append([
-                PrePostProcessingWrapper(self_attention_layer, n_hidden, keep_prob, is_train),
-                PrePostProcessingWrapper(feed_forward_network, n_hidden, keep_prob, is_train)] if self.is_ff else
-                               [PrePostProcessingWrapper(self_attention_layer, n_hidden, keep_prob, is_train)])
+                PrePostProcessingWrapper(self_attention_layer, n_hidden, dropout, is_train),
+                PrePostProcessingWrapper(feed_forward_network, n_hidden, dropout, is_train)] if self.is_ff else
+                               [PrePostProcessingWrapper(self_attention_layer, n_hidden, dropout, is_train)])
 
         # Create final layer normalization layer.
         self.output_normalization = LayerNormalization(n_hidden)
@@ -181,7 +181,7 @@ class Attention(tf.layers.Layer):
         logits += bias
         weights = tf.nn.softmax(logits, name="attention_weights")
         if self.train:
-            weights = tf.nn.dropout(weights, 1.0 - self.attention_dropout)
+            weights = tf.nn.dropout(weights, rate=self.attention_dropout)
         attention_output = tf.matmul(weights, v)
 
         # Recombine heads --> [batch_size, length, hidden_size]
@@ -252,7 +252,7 @@ class FeedFowardNetwork(tf.layers.Layer):
 
         output = self.filter_dense_layer(x)
         if self.train:
-            output = tf.nn.dropout(output, 1.0 - self.relu_dropout)
+            output = tf.nn.dropout(output, rate=self.relu_dropout)
         output = self.output_dense_layer(output)
 
         if padding is not None:
@@ -289,9 +289,9 @@ class LayerNormalization(tf.layers.Layer):
 class PrePostProcessingWrapper(object):
     """Wrapper class that applies layer pre-processing and post-processing."""
 
-    def __init__(self, layer, n_hidden, keep_prob, train):
+    def __init__(self, layer, n_hidden, process_dropout, train):
         self.layer = layer
-        self.keep_prob = keep_prob
+        self.process_dropout = process_dropout
         self.train = train
 
         # Create normalization layer
@@ -306,7 +306,7 @@ class PrePostProcessingWrapper(object):
 
         # Postprocessing: apply dropout and residual connection
         if self.train:
-            y = tf.nn.dropout(y, self.keep_prob)
+            y = tf.nn.dropout(y, rate=self.process_dropout)
         return x + y
 
 

@@ -53,18 +53,21 @@ def preprocess_data(data_path, task_type):
     return [np.asarray(samples, dtype=np.float32), np.asarray(labels, dtype=np.int32)], dim
 
 
-def save(data, file_name, data_type):
-    print('Saving {} data..c.'.format(data_type))
-    for d in data:
-        np.save(file_name, d)
+def save(data, path, data_type):
+    print('Saving {} data...'.format(data_type))
+    np.save(os.path.join(path, data_type + '_x.npy'), data[0])
+    np.save(os.path.join(path, data_type + '_y.npy'), data[1])
     # with open(file_name, 'w') as f:
     #     json.dump(data, f)
     # f.close()
 
 
 single_task = ['5849', '25000', '41401', '4019']
-for path in single_task:
-    train_data, dim = preprocess_data('data/raw_data/' + path + '/train', path)
-    save(train_data, 'data/preprocessed_data/baseline/' + path + '/train.npy', 'train')
-    # test_data, dim = preprocess_data('data/raw_data/' + path + '/test', path)
-    # save(test_data, 'data/preprocessed_data/baseline/' + path + '/test.npy', 'test')
+for task in single_task:
+    path = 'data/preprocessed_data/baseline/' + task
+    if not os.path.exists(path):
+        os.makedirs(path)
+    train_data, dim = preprocess_data('data/raw_data/' + task + '/train', task)
+    save(train_data, 'data/preprocessed_data/baseline/' + task, 'train')
+    test_data, dim = preprocess_data('data/raw_data/' + task + '/test', task)
+    save(test_data, 'data/preprocessed_data/baseline/' + task, 'test')
