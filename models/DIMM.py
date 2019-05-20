@@ -108,7 +108,7 @@ class DIMM_Model(object):
             else:
                 self.input_encodes = tf.concat([self.index, self.medicine], 2)
             if self.is_train:
-                self.input_encodes = tf.nn.dropout(self.input_encodes, self.dropout_keep_prob)
+                self.input_encodes = tf.nn.dropout(self.input_encodes, rate=1 - self.dropout_keep_prob)
 
     def _input_attention(self, input_x, input_y, n_unit, scope):
         with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
@@ -127,7 +127,7 @@ class DIMM_Model(object):
         if self.is_bi:
             self.n_hidden *= self.n_layer
         if self.is_train:
-            self.seq_encodes = tf.nn.dropout(self.seq_encodes, self.dropout_keep_prob)
+            self.seq_encodes = tf.nn.dropout(self.seq_encodes, rate=1 - self.dropout_keep_prob)
 
     def _step_attention(self):
         with tf.variable_scope('step_attention', reuse=tf.AUTO_REUSE):
@@ -160,7 +160,7 @@ class DIMM_Model(object):
             self.label_dense_1 = tf.nn.relu(dense(self.last_encodes, hidden=int(self.n_hidden / 2), scope='dense_1',
                                                   initializer=self.initializer))
             if self.is_train:
-                self.label_dense_1 = tf.nn.dropout(self.label_dense_1, self.dropout_keep_prob)
+                self.label_dense_1 = tf.nn.dropout(self.label_dense_1, rate=1 - self.dropout_keep_prob)
             self.outputs = dense(self.label_dense_1, hidden=self.n_label, scope='output_labels',
                                  initializer=self.initializer)
 

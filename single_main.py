@@ -2,6 +2,7 @@ import os
 import argparse
 import logging
 import ujson as json
+import pickle as pkl
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import accuracy_score
@@ -287,17 +288,27 @@ def train(args, file_paths, shape_meta):
         logger.info('Max Acc - {}'.format(max_acc))
         logger.info('Max Pse - {}'.format(max_pse))
         logger.info('Max Epoch - {}'.format(max_epoch))
-        with open(os.path.join(args.result_dir, 'Hour.json'), 'w') as f:
-            for hour in max_hour:
-                f.write(json.dumps(hour) + '\n')
+        # with open(os.path.join(args.result_dir, 'Hour.json'), 'w') as f:
+        #     for hour in max_hour:
+        #         f.write(json.dumps(hour) + '\n')
+        # f.close()
+        with open(os.path.join(args.result_dir, 'Hour.pkl'), 'wb') as f:
+            pkl.dump(max_hour, f)
         f.close()
-        with open(os.path.join(args.result_dir, 'FALSE.json'), 'w') as f:
-            for record in FALSE:
-                f.write(json.dumps(record) + '\n')
+
+        # with open(os.path.join(args.result_dir, 'FALSE.json'), 'w') as f:
+        #     for record in FALSE:
+        #         f.write(json.dumps(record) + '\n')
+        # f.close()
+        with open(os.path.join(args.result_dir, 'FALSE.pkl'), 'wb') as f:
+            pkl.dump(FALSE, f)
         f.close()
-        with open(os.path.join(args.result_dir, 'NAME.json'), 'w') as f:
-            for record in NAMES:
-                f.write(json.dumps(record) + '\n')
+        # with open(os.path.join(args.result_dir, 'NAME.json'), 'w') as f:
+        #     for record in NAMES:
+        #         f.write(json.dumps(record) + '\n')
+        # f.close()
+        with open(os.path.join(args.result_dir, 'NAME.pkl'), 'wb') as f:
+            pkl.dump(NAMES, f)
         f.close()
         if args.is_map:
             np.savetxt(os.path.join(args.result_dir, args.task + '_index_W.txt'), iw, fmt='%.6f', delimiter=',')

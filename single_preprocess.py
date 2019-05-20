@@ -74,8 +74,10 @@ def divide_data(train_data, test_data):
             dead = 1
         raw_sample = pd.read_csv(os.path.join(train_data, file), sep=',')
         raw_sample = raw_sample.fillna(0)
-        medicine = np.delete(raw_sample.iloc[:, 209:].as_matrix(), -1, axis=0)
-        index = np.delete(raw_sample.iloc[:, 3:208].as_matrix(), 0, axis=0)
+        # medicine = np.delete(raw_sample.iloc[:, 209:].as_matrix(), 0, axis=0)
+        # index = np.delete(raw_sample.iloc[:, 3:208].as_matrix(), -1, axis=0)
+        medicine = raw_sample.iloc[:, 209:].as_matrix()
+        index = raw_sample.iloc[:, 3:208].as_matrix()
         length = index.shape[0]
         if length > max_len:
             max_len = length
@@ -117,69 +119,6 @@ def divide_data(train_data, test_data):
     for sample in test_samples:
         test_eval_samples[str(sample['patient_id'])] = {'label': sample['label'],
                                                         'name': sample['name']}
-
-    return train_samples, test_samples, train_eval_samples, test_eval_samples, max_len, (index_dim, medicine_dim)
-
-
-def preprocess_data(data_path):
-    samples = []
-    total = 0
-    max_len = 0
-    seq_len = []
-    dead_len, live_len = 0, 0
-    # scores = []
-    print('Reading raw files...')
-    for file in tqdm(os.listdir(data_path)):
-        total += 1
-        if file.startswith('0'):
-            dead = 0
-        else:
-            dead = 1
-        # try:
-        raw_sample = pd.read_csv(os.path.join(data_path, file), sep=',')
-        # except:
-        # print(file)
-        raw_sample = raw_sample.fillna(0)
-        medicine = raw_sample.iloc[:, 209:].as_matrix()
-        index = raw_sample.iloc[:, 3:208].as_matrix()
-        # score = raw_sample['totalScore'].values.tolist()
-        # for i, idx in enumerate(index):
-        #     if not np.all(idx == np.array(list(idx))):
-        #         print(file)
-        #         break
-        length = index.shape[0]
-        if length > max_len:
-            max_len = length
-        if length == 0:
-            print(file)
-        sample = {'patient_id': total,
-                  'index': index,
-                  'medicine': medicine,
-                  # 'score': score,
-                  'label': dead,
-                  'name': file}
-        samples.append(sample)
-        # scores.append(np.mean(score))
-        seq_len.append(length)
-        if dead == 0:
-            dead_len += length
-        else:
-            live_len += length
-
-    # print(stats.describe(np.asarray(scores)))
-    # stat(seq_len)
-    print('Dead length {}'.format(dead_len))
-    print('Live length {}'.format(live_len))
-    train_samples, test_samples = train_test_split(samples, test_size=0.2)
-    index_dim = samples[0]['index'].shape[1]
-    medicine_dim = samples[0]['medicine'].shape[1]
-    del samples
-    train_eval_samples = {}
-    for sample in train_samples:
-        train_eval_samples[str(sample['patient_id'])] = {'label': sample['label'], 'name': sample['name']}
-    test_eval_samples = {}
-    for sample in test_samples:
-        test_eval_samples[str(sample['patient_id'])] = {'label': sample['label'], 'name': sample['name']}
 
     return train_samples, test_samples, train_eval_samples, test_eval_samples, max_len, (index_dim, medicine_dim)
 
@@ -274,7 +213,6 @@ def build_features(samples, data_type, max_len, dim, out_file):
 
 
 def run_prepare(config, flags):
-    # train_samples, test_samples, train_eval_samples, test_eval_samples, max_len, dim = preprocess_data(config.raw_dir)
     train_samples, test_samples, train_eval_samples, test_eval_samples, max_len, dim = divide_data(
         config.raw_dir + '/train',
         config.raw_dir + '/test')
